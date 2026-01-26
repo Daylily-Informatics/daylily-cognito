@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CognitoConfig:
     """Immutable Cognito configuration.
 
