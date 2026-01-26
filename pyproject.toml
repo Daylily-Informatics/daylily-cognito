@@ -7,21 +7,27 @@ name = "daylily-cognito"
 version = "0.1.0"
 description = "Shared Cognito authentication library for FastAPI + Jinja2 web apps"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 requires-python = ">=3.9"
 authors = [
     {name = "Daylily Informatics", email = "daylily@daylilyinformatics.com"}
 ]
+keywords = ["aws", "cognito", "authentication", "fastapi", "jwt", "oauth2"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Framework :: FastAPI",
+    "Topic :: Security",
+    "Topic :: Internet :: WWW/HTTP :: Session",
+    "Typing :: Typed",
 ]
 dependencies = [
     "boto3>=1.26.0",
