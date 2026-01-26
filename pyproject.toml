@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "daylily-cognito"
+version = "0.1.0"
+description = "Shared Cognito authentication library for FastAPI + Jinja2 web apps"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "Daylily Informatics", email = "daylily@daylilyinformatics.com"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: FastAPI",
+]
+dependencies = [
+    "boto3>=1.26.0",
+    "fastapi>=0.104.0",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+auth = [
+    "python-jose[cryptography]>=3.3.0",
+]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+]
+
+[project.scripts]
+daycog = "daylily_cognito.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Daylily-Informatics/daylily-cognito"
+Repository = "https://github.com/Daylily-Informatics/daylily-cognito"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["daylily_cognito*"]
