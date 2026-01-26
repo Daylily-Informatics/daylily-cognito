@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=61.0", "wheel", "setuptools-scm>=8.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "daylily-cognito"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Shared Cognito authentication library for FastAPI + Jinja2 web apps"
 readme = "README.md"
 license = "MIT"
@@ -79,3 +79,9 @@ quote-style = "double"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+
+[tool.setuptools_scm]
+# Derives version from git tags (e.g., 0.1.4 from tag "0.1.4")
+# If commits exist after tag, version becomes "0.1.4.dev1+g<hash>"
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"

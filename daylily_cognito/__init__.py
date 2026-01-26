@@ -54,4 +54,9 @@ __all__ = [
     "main",
 ]
 
-__version__ = "0.1.0"
+try:
+    from importlib.metadata import version as _get_version
+
+    __version__ = _get_version("daylily-cognito")
+except Exception:
+    __version__ = "0.0.0"  # fallback for editable installs without metadata
