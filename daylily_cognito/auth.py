@@ -103,8 +103,7 @@ class CognitoAuth:
         """
         if not JOSE_AVAILABLE:
             raise ImportError(
-                "python-jose is required for authentication. "
-                "Install with: pip install 'python-jose[cryptography]'"
+                "python-jose is required for authentication. Install with: pip install 'python-jose[cryptography]'"
             )
 
         session_kwargs = {"region_name": region}
@@ -232,10 +231,7 @@ class CognitoAuth:
 
     def _update_jwks_url(self) -> None:
         """Update JWKS URL after user_pool_id changes."""
-        self.jwks_url = (
-            f"https://cognito-idp.{self.region}.amazonaws.com/"
-            f"{self.user_pool_id}/.well-known/jwks.json"
-        )
+        self.jwks_url = f"https://cognito-idp.{self.region}.amazonaws.com/{self.user_pool_id}/.well-known/jwks.json"
 
     def create_app_client(
         self,
@@ -430,6 +426,7 @@ class CognitoAuth:
             # Verify token hasn't expired
             if "exp" in claims:
                 import time
+
                 if claims["exp"] < time.time():
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -656,12 +653,7 @@ class CognitoAuth:
                 LOGGER.error("Authentication error for user %s: %s - %s", email, error_code, error_message)
                 raise
 
-    def respond_to_new_password_challenge(
-        self,
-        email: str,
-        new_password: str,
-        session: str
-    ) -> Dict:
+    def respond_to_new_password_challenge(self, email: str, new_password: str, session: str) -> Dict:
         """Respond to NEW_PASSWORD_REQUIRED challenge.
 
         This is used when a user logs in with a temporary password and must

@@ -65,18 +65,14 @@ class TestVerifyJwtClaimsUnverifiedSignature:
     def test_valid_token(self) -> None:
         """Valid token with matching client_id passes."""
         token = _create_test_token({"sub": "user123", "client_id": "expected_client"})
-        claims = verify_jwt_claims_unverified_signature(
-            token, expected_client_id="expected_client"
-        )
+        claims = verify_jwt_claims_unverified_signature(token, expected_client_id="expected_client")
 
         assert claims["sub"] == "user123"
         assert claims["client_id"] == "expected_client"
 
     def test_expired_token_raises(self) -> None:
         """Expired token raises HTTPException with 'Token has expired'."""
-        token = _create_test_token(
-            {"sub": "user123", "client_id": "client"}, exp_offset=-3600
-        )
+        token = _create_test_token({"sub": "user123", "client_id": "client"}, exp_offset=-3600)
 
         with pytest.raises(HTTPException) as exc_info:
             verify_jwt_claims_unverified_signature(token, expected_client_id="client")
@@ -89,9 +85,7 @@ class TestVerifyJwtClaimsUnverifiedSignature:
         token = _create_test_token({"sub": "user123", "client_id": "wrong_client"})
 
         with pytest.raises(HTTPException) as exc_info:
-            verify_jwt_claims_unverified_signature(
-                token, expected_client_id="expected_client"
-            )
+            verify_jwt_claims_unverified_signature(token, expected_client_id="expected_client")
 
         assert exc_info.value.status_code == 401
         assert exc_info.value.detail == "Invalid token audience"
@@ -99,9 +93,7 @@ class TestVerifyJwtClaimsUnverifiedSignature:
     def test_malformed_token_raises(self) -> None:
         """Malformed token raises HTTPException with 'Invalid authentication token'."""
         with pytest.raises(HTTPException) as exc_info:
-            verify_jwt_claims_unverified_signature(
-                "not.a.valid.token", expected_client_id="client"
-            )
+            verify_jwt_claims_unverified_signature("not.a.valid.token", expected_client_id="client")
 
         assert exc_info.value.status_code == 401
         assert exc_info.value.detail == "Invalid authentication token"
@@ -111,9 +103,7 @@ class TestVerifyJwtClaimsUnverifiedSignature:
         token = _create_test_token({"sub": "user123"})  # No client_id
 
         with pytest.raises(HTTPException) as exc_info:
-            verify_jwt_claims_unverified_signature(
-                token, expected_client_id="expected_client"
-            )
+            verify_jwt_claims_unverified_signature(token, expected_client_id="expected_client")
 
         assert exc_info.value.status_code == 401
         assert exc_info.value.detail == "Invalid token audience"

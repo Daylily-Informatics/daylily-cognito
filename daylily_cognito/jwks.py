@@ -21,10 +21,7 @@ def build_jwks_url(region: str, user_pool_id: str) -> str:
     Returns:
         JWKS URL string
     """
-    return (
-        f"https://cognito-idp.{region}.amazonaws.com/"
-        f"{user_pool_id}/.well-known/jwks.json"
-    )
+    return f"https://cognito-idp.{region}.amazonaws.com/{user_pool_id}/.well-known/jwks.json"
 
 
 def fetch_jwks(region: str, user_pool_id: str) -> dict[str, Any]:
@@ -41,8 +38,7 @@ def fetch_jwks(region: str, user_pool_id: str) -> dict[str, Any]:
         NotImplementedError: This function is not yet implemented.
     """
     raise NotImplementedError(
-        "JWKS fetching is not yet implemented. "
-        "Token verification currently uses verify_signature=False."
+        "JWKS fetching is not yet implemented. Token verification currently uses verify_signature=False."
     )
 
 
@@ -61,6 +57,5 @@ def verify_token_with_jwks(token: str, region: str, user_pool_id: str) -> dict[s
         NotImplementedError: This function is not yet implemented.
     """
     raise NotImplementedError(
-        "JWKS-based token verification is not yet implemented. "
-        "Use verify_jwt_claims_unverified_signature() instead."
+        "JWKS-based token verification is not yet implemented. Use verify_jwt_claims_unverified_signature() instead."
     )

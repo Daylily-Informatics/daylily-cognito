@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,auth]"
+
+      - name: Run tests
+        run: |
+          python -m pytest -q --tb=short
+
+      - name: Run tests with coverage
+        if: matrix.python-version == '3.11'
+        run: |
+          python -m pytest --cov=daylily_cognito --cov-report=term-missing
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+
+      - name: Check formatting
+        run: ruff format --check .
+
+      - name: Check linting
+        run: ruff check .
+
+  import-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[auth]"
+
+      - name: Verify no daylib imports
+        run: |
+          if grep -r "daylib" daylily_cognito/; then
+            echo "ERROR: Found daylib imports in daylily_cognito/"
+            exit 1
+          fi
+          echo "OK: No daylib imports found"
+
+      - name: Verify package imports
+        run: |
+          python -c "from daylily_cognito import CognitoConfig, CognitoAuth, create_auth_dependency, security"
+          python -c "from daylily_cognito import build_authorization_url, build_logout_url"
+          python -c "from daylily_cognito import decode_jwt_unverified, verify_jwt_claims_unverified_signature"
+          echo "OK: All public imports work"
+
+      - name: Verify CLI entrypoint
+        run: |
+          daycog --help
+          echo "OK: CLI entrypoint works"
+

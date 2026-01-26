@@ -160,9 +160,7 @@ def exchange_authorization_code(
             return json.loads(body)
     except urllib.error.HTTPError as e:
         error_body = e.read().decode("utf-8") if e.fp else ""
-        raise RuntimeError(
-            f"Token exchange failed: HTTP {e.code} - {error_body}"
-        ) from e
+        raise RuntimeError(f"Token exchange failed: HTTP {e.code} - {error_body}") from e
 
 
 def refresh_with_refresh_token(

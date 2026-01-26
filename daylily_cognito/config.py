@@ -96,9 +96,7 @@ class CognitoConfig:
             missing.append(f"{env_prefix}APP_CLIENT_ID")
 
         if missing:
-            raise ValueError(
-                f"Missing required environment variables for config '{name}': {', '.join(missing)}"
-            )
+            raise ValueError(f"Missing required environment variables for config '{name}': {', '.join(missing)}")
 
         return config
 
@@ -125,9 +123,7 @@ class CognitoConfig:
         user_pool_id = os.environ.get("COGNITO_USER_POOL_ID", "")
 
         # Client ID: COGNITO_APP_CLIENT_ID > COGNITO_CLIENT_ID
-        app_client_id = os.environ.get("COGNITO_APP_CLIENT_ID") or os.environ.get(
-            "COGNITO_CLIENT_ID", ""
-        )
+        app_client_id = os.environ.get("COGNITO_APP_CLIENT_ID") or os.environ.get("COGNITO_CLIENT_ID", "")
 
         # AWS profile (optional)
         aws_profile = os.environ.get("AWS_PROFILE")

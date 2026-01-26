@@ -32,8 +32,7 @@ def decode_jwt_unverified(token: str) -> dict[str, Any]:
         from jose import jwt
     except ImportError as e:
         raise ImportError(
-            "python-jose is required for JWT decoding. "
-            "Install with: pip install 'python-jose[cryptography]'"
+            "python-jose is required for JWT decoding. Install with: pip install 'python-jose[cryptography]'"
         ) from e
 
     # Key is required by the API but not used when verify_signature=False
@@ -79,8 +78,7 @@ def verify_jwt_claims_unverified_signature(
         from jose import ExpiredSignatureError, JWTError, jwt
     except ImportError as e:
         raise ImportError(
-            "python-jose is required for JWT verification. "
-            "Install with: pip install 'python-jose[cryptography]'"
+            "python-jose is required for JWT verification. Install with: pip install 'python-jose[cryptography]'"
         ) from e
 
     try:

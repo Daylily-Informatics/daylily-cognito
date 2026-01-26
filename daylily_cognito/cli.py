@@ -101,9 +101,7 @@ def status() -> None:
         else:
             # Legacy env var lookup
             pool_id = os.environ.get("COGNITO_USER_POOL_ID", "")
-            client_id = os.environ.get("COGNITO_APP_CLIENT_ID") or os.environ.get(
-                "COGNITO_CLIENT_ID", ""
-            )
+            client_id = os.environ.get("COGNITO_APP_CLIENT_ID") or os.environ.get("COGNITO_CLIENT_ID", "")
             source = "env"
 
         table.add_row("Region", region, source if _config_name else "")
@@ -533,7 +531,9 @@ def export_users(
                     "status": user.get("UserStatus"),
                     "enabled": user.get("Enabled"),
                     "created": user.get("UserCreateDate").isoformat() if user.get("UserCreateDate") else None,
-                    "modified": user.get("UserLastModifiedDate").isoformat() if user.get("UserLastModifiedDate") else None,
+                    "modified": user.get("UserLastModifiedDate").isoformat()
+                    if user.get("UserLastModifiedDate")
+                    else None,
                     "attributes": {attr["Name"]: attr["Value"] for attr in user.get("Attributes", [])},
                 }
                 users.append(user_record)
