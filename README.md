@@ -35,9 +35,33 @@ auth = CognitoAuth(
     region=config.region,
     user_pool_id=config.user_pool_id,
     app_client_id=config.app_client_id,
+    app_client_secret=config.app_client_secret,  # optional, for clients with secrets
     profile=config.aws_profile,
 )
 ```
+
+### App Client Secret Support
+
+When a Cognito app client has a client secret enabled, all authentication API calls
+require a `SECRET_HASH` parameter. The library automatically computes this when
+`app_client_secret` is provided:
+
+```python
+# For app clients WITH a secret
+auth = CognitoAuth(
+    region="us-west-2",
+    user_pool_id="us-west-2_pUqKyIM1N",
+    app_client_id="your-client-id",
+    app_client_secret="your-client-secret",  # Required for clients with secrets
+)
+
+# The SECRET_HASH is automatically computed as:
+# base64(hmac_sha256(client_secret, username + client_id))
+```
+
+**Note:** If your Cognito app client was created with `GenerateSecret=True`, you MUST
+provide the `app_client_secret` parameter, otherwise authentication will fail with
+"Unable to verify secret hash for client".
 
 ### Option 2: Namespaced Environment Variables
 
