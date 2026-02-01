@@ -5,6 +5,9 @@ Provides JWT token validation and user management for multi-tenant access.
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import logging
 from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 
@@ -86,6 +89,7 @@ class CognitoAuth:
         region: str,
         user_pool_id: str = "",
         app_client_id: str = "",
+        app_client_secret: Optional[str] = None,
         profile: Optional[str] = None,
         settings: Optional[SettingsProtocol] = None,
     ):
@@ -95,6 +99,7 @@ class CognitoAuth:
             region: AWS region
             user_pool_id: Cognito User Pool ID (can be empty if using create_user_pool_if_not_exists)
             app_client_id: Cognito App Client ID (can be empty if using create_app_client)
+            app_client_secret: Optional Cognito App Client Secret (required if client has a secret)
             profile: AWS profile name
             settings: Optional settings object implementing SettingsProtocol for domain validation
 
@@ -115,6 +120,7 @@ class CognitoAuth:
         self.region = region
         self.user_pool_id = user_pool_id
         self.app_client_id = app_client_id
+        self.app_client_secret = app_client_secret
         self.profile = profile
         self.settings = settings
 
@@ -232,6 +238,27 @@ class CognitoAuth:
     def _update_jwks_url(self) -> None:
         """Update JWKS URL after user_pool_id changes."""
         self.jwks_url = f"https://cognito-idp.{self.region}.amazonaws.com/{self.user_pool_id}/.well-known/jwks.json"
+
+    def _compute_secret_hash(self, username: str) -> str:
+        """Compute SECRET_HASH for Cognito API calls.
+
+        When an app client has a secret, Cognito requires a SECRET_HASH
+        in auth requests. This is HMAC-SHA256(client_secret, username + client_id),
+        base64 encoded.
+
+        Args:
+            username: The username (email) for authentication
+
+        Returns:
+            Base64-encoded SECRET_HASH string
+        """
+        message = username + self.app_client_id
+        dig = hmac.new(
+            self.app_client_secret.encode("utf-8"),
+            msg=message.encode("utf-8"),
+            digestmod=hashlib.sha256,
+        ).digest()
+        return base64.b64encode(dig).decode()
 
     def create_app_client(
         self,
@@ -596,14 +623,19 @@ class CognitoAuth:
         self._validate_email_domain(email)
 
         try:
+            auth_params = {
+                "USERNAME": email,
+                "PASSWORD": password,
+            }
+            # Include SECRET_HASH if app client has a secret
+            if self.app_client_secret:
+                auth_params["SECRET_HASH"] = self._compute_secret_hash(email)
+
             response = self.cognito.admin_initiate_auth(
                 UserPoolId=self.user_pool_id,
                 ClientId=self.app_client_id,
                 AuthFlow="ADMIN_USER_PASSWORD_AUTH",
-                AuthParameters={
-                    "USERNAME": email,
-                    "PASSWORD": password,
-                },
+                AuthParameters=auth_params,
             )
 
             # Check if challenge is required (e.g., NEW_PASSWORD_REQUIRED)
@@ -671,14 +703,19 @@ class CognitoAuth:
             ValueError: If the challenge response fails
         """
         try:
+            challenge_responses = {
+                "USERNAME": email,
+                "NEW_PASSWORD": new_password,
+            }
+            # Include SECRET_HASH if app client has a secret
+            if self.app_client_secret:
+                challenge_responses["SECRET_HASH"] = self._compute_secret_hash(email)
+
             response = self.cognito.admin_respond_to_auth_challenge(
                 UserPoolId=self.user_pool_id,
                 ClientId=self.app_client_id,
                 ChallengeName="NEW_PASSWORD_REQUIRED",
-                ChallengeResponses={
-                    "USERNAME": email,
-                    "NEW_PASSWORD": new_password,
-                },
+                ChallengeResponses=challenge_responses,
                 Session=session,
             )
 
