@@ -260,7 +260,6 @@ class CognitoAuth:
         ).digest()
         return base64.b64encode(dig).decode()
 
-
     def create_app_client(
         self,
         client_name: str = "daylily-workset-api",
