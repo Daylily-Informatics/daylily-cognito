@@ -206,6 +206,110 @@ logout_url = build_logout_url(
 )
 ```
 
+## Google OAuth Integration
+
+`daylily-cognito` supports standalone Google OAuth2 authentication that auto-creates
+users in your Cognito user pool. This hybrid approach lets users sign in with Google
+while keeping Cognito as the single user directory.
+
+### Prerequisites
+
+1. Create a Google Cloud project and enable the OAuth consent screen
+2. Create OAuth 2.0 credentials in the Google Cloud Console
+3. Register `http://localhost:8000/auth/google/callback` as an authorized redirect URI
+
+### Environment Variables
+
+**Namespaced:**
+
+```bash
+export DAYCOG_PROD_GOOGLE_CLIENT_ID="your-google-client-id"
+export DAYCOG_PROD_GOOGLE_CLIENT_SECRET="your-google-client-secret"
+```
+
+**Legacy:**
+
+```bash
+export GOOGLE_CLIENT_ID="your-google-client-id"
+export GOOGLE_CLIENT_SECRET="your-google-client-secret"
+```
+
+Or use the CLI helper:
+
+```bash
+daycog setup-google --client-id YOUR_ID --client-secret YOUR_SECRET
+```
+
+### Usage
+
+```python
+from daylily_cognito import (
+    build_google_authorization_url,
+    exchange_google_code_for_tokens,
+    fetch_google_userinfo,
+    auto_create_cognito_user_from_google,
+    generate_state_token,
+    CognitoAuth,
+    CognitoConfig,
+)
+
+# 1. Build authorization URL and redirect the user
+state = generate_state_token()
+auth_url = build_google_authorization_url(
+    client_id="your-google-client-id",
+    redirect_uri="http://localhost:8000/auth/google/callback",
+    state=state,
+)
+
+# 2. In your callback handler, exchange the code for tokens
+tokens = exchange_google_code_for_tokens(
+    client_id="your-google-client-id",
+    client_secret="your-google-client-secret",
+    code=request.query_params["code"],
+    redirect_uri="http://localhost:8000/auth/google/callback",
+)
+
+# 3. Fetch the user's Google profile
+userinfo = fetch_google_userinfo(tokens["access_token"])
+# userinfo contains: sub, email, email_verified, name, given_name,
+#                    family_name, picture, locale, hd (if Google Workspace)
+
+# 4. Auto-create or retrieve the Cognito user
+config = CognitoConfig.from_legacy_env()
+auth = CognitoAuth(
+    region=config.region,
+    user_pool_id=config.user_pool_id,
+    app_client_id=config.app_client_id,
+)
+result = auto_create_cognito_user_from_google(auth, userinfo)
+# result = {"user": {...}, "created": True/False, "google_sub": "...", "email": "..."}
+```
+
+### Google Attributes Captured
+
+All attributes available with standard scopes (`openid email profile`) — no extra
+permissions required:
+
+| Claim | Description |
+|-------|-------------|
+| `sub` | Unique Google user ID |
+| `email` | Email address |
+| `email_verified` | Whether email is verified by Google |
+| `name` | Full display name |
+| `given_name` | First name |
+| `family_name` | Last name |
+| `picture` | Profile photo URL |
+| `locale` | User locale (BCP 47) |
+| `hd` | Hosted domain (Google Workspace only, absent for personal accounts) |
+
+### Cognito Custom Attributes
+
+The user pool must have these custom attributes configured:
+
+- `custom:customer_id` — defaults to Google `sub`
+- `custom:google_sub` — Google unique user ID
+- `custom:google_hd` — hosted domain (optional, populated when present)
+
 ## Development
 
 ```bash
@@ -217,12 +321,12 @@ pytest -q
 
 # Run tests with coverage
 pytest --cov=daylily_cognito
+
+# Lint and format
+ruff check daylily_cognito tests
+ruff format daylily_cognito tests
 ```
 
 ## License
 
 MIT
- 
- 
- 
- 

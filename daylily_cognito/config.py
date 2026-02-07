@@ -21,6 +21,9 @@ class CognitoConfig:
         user_pool_id: Cognito User Pool ID
         app_client_id: Cognito App Client ID
         aws_profile: Optional AWS profile name
+        google_client_id: Optional Google OAuth2 client ID
+        google_client_secret: Optional Google OAuth2 client secret
+        cognito_domain: Optional Cognito hosted UI domain (for federated flows)
     """
 
     name: Optional[str]
@@ -28,6 +31,9 @@ class CognitoConfig:
     user_pool_id: str
     app_client_id: str
     aws_profile: Optional[str] = None
+    google_client_id: Optional[str] = None
+    google_client_secret: Optional[str] = None
+    cognito_domain: Optional[str] = None
 
     def validate(self) -> None:
         """Validate configuration fields.
@@ -55,6 +61,9 @@ class CognitoConfig:
             {prefix}_{NAME}_USER_POOL_ID
             {prefix}_{NAME}_APP_CLIENT_ID
             {prefix}_{NAME}_AWS_PROFILE (optional)
+            {prefix}_{NAME}_GOOGLE_CLIENT_ID (optional)
+            {prefix}_{NAME}_GOOGLE_CLIENT_SECRET (optional)
+            {prefix}_{NAME}_COGNITO_DOMAIN (optional)
 
         Args:
             name: Config name (used in env var names, uppercased)
@@ -77,6 +86,9 @@ class CognitoConfig:
         user_pool_id = os.environ.get(f"{env_prefix}USER_POOL_ID", "")
         app_client_id = os.environ.get(f"{env_prefix}APP_CLIENT_ID", "")
         aws_profile = os.environ.get(f"{env_prefix}AWS_PROFILE")
+        google_client_id = os.environ.get(f"{env_prefix}GOOGLE_CLIENT_ID")
+        google_client_secret = os.environ.get(f"{env_prefix}GOOGLE_CLIENT_SECRET")
+        cognito_domain = os.environ.get(f"{env_prefix}COGNITO_DOMAIN")
 
         config = cls(
             name=name,
@@ -84,6 +96,9 @@ class CognitoConfig:
             user_pool_id=user_pool_id,
             app_client_id=app_client_id,
             aws_profile=aws_profile,
+            google_client_id=google_client_id,
+            google_client_secret=google_client_secret,
+            cognito_domain=cognito_domain,
         )
 
         # Validate and provide helpful error message
@@ -109,6 +124,9 @@ class CognitoConfig:
             COGNITO_USER_POOL_ID
             COGNITO_APP_CLIENT_ID (fallback: COGNITO_CLIENT_ID)
             AWS_PROFILE (optional)
+            GOOGLE_CLIENT_ID (optional)
+            GOOGLE_CLIENT_SECRET (optional)
+            COGNITO_DOMAIN (optional)
 
         Returns:
             CognitoConfig instance
@@ -128,12 +146,20 @@ class CognitoConfig:
         # AWS profile (optional)
         aws_profile = os.environ.get("AWS_PROFILE")
 
+        # Google OAuth (optional)
+        google_client_id = os.environ.get("GOOGLE_CLIENT_ID")
+        google_client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+        cognito_domain = os.environ.get("COGNITO_DOMAIN")
+
         config = cls(
             name=None,
             region=region,
             user_pool_id=user_pool_id,
             app_client_id=app_client_id,
             aws_profile=aws_profile,
+            google_client_id=google_client_id,
+            google_client_secret=google_client_secret,
+            cognito_domain=cognito_domain,
         )
 
         # Validate required fields

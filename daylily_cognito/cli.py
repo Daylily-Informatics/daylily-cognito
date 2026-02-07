@@ -697,6 +697,45 @@ def teardown(
         raise typer.Exit(1)
 
 
+@cognito_app.command("setup-google")
+def setup_google(
+    google_client_id: str = typer.Option(..., "--client-id", help="Google OAuth2 client ID"),
+    google_client_secret: str = typer.Option(..., "--client-secret", help="Google OAuth2 client secret"),
+    redirect_port: int = typer.Option(8000, "--port", "-p", help="Local server port for redirect URI"),
+) -> None:
+    """Display environment variables for Google OAuth integration.
+
+    Generates the env var export commands needed to enable Google OAuth
+    with daylily-cognito. Does not store credentials — print only.
+    """
+    redirect_uri = f"http://localhost:{redirect_port}/auth/google/callback"
+
+    console.print("\n[bold cyan]Google OAuth Configuration[/bold cyan]\n")
+    console.print("Set these environment variables:\n")
+
+    if _config_name:
+        name_upper = _config_name.upper()
+        console.print(f'  export DAYCOG_{name_upper}_GOOGLE_CLIENT_ID="{google_client_id}"')
+        console.print(f'  export DAYCOG_{name_upper}_GOOGLE_CLIENT_SECRET="{google_client_secret}"')
+    else:
+        console.print(f'  export GOOGLE_CLIENT_ID="{google_client_id}"')
+        console.print(f'  export GOOGLE_CLIENT_SECRET="{google_client_secret}"')
+
+    console.print("\n[dim]Redirect URI (register in Google Cloud Console):[/dim]")
+    console.print(f"  {redirect_uri}\n")
+
+    # Show a quick integration snippet
+    console.print("[bold]Quick integration example:[/bold]\n")
+    console.print("[dim]from daylily_cognito import ([/dim]")
+    console.print("[dim]    build_google_authorization_url,[/dim]")
+    console.print("[dim]    exchange_google_code_for_tokens,[/dim]")
+    console.print("[dim]    fetch_google_userinfo,[/dim]")
+    console.print("[dim]    auto_create_cognito_user_from_google,[/dim]")
+    console.print("[dim])[/dim]\n")
+
+    console.print("[green]✓[/green] Configuration displayed. Set the env vars above to enable Google OAuth.\n")
+
+
 def main() -> None:
     """Entry point for the daycog CLI."""
     cognito_app()

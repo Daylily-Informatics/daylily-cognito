@@ -25,6 +25,13 @@ from .auth import CognitoAuth
 from .cli import cognito_app, main
 from .config import CognitoConfig
 from .fastapi import create_auth_dependency, security
+from .google import (
+    auto_create_cognito_user_from_google,
+    build_google_authorization_url,
+    exchange_google_code_for_tokens,
+    fetch_google_userinfo,
+    generate_state_token,
+)
 from .oauth import (
     build_authorization_url,
     build_logout_url,
@@ -41,11 +48,17 @@ __all__ = [
     # FastAPI
     "create_auth_dependency",
     "security",
-    # OAuth
+    # Cognito OAuth
     "build_authorization_url",
     "build_logout_url",
     "exchange_authorization_code",
     "refresh_with_refresh_token",
+    # Google OAuth
+    "build_google_authorization_url",
+    "exchange_google_code_for_tokens",
+    "fetch_google_userinfo",
+    "auto_create_cognito_user_from_google",
+    "generate_state_token",
     # Tokens
     "decode_jwt_unverified",
     "verify_jwt_claims_unverified_signature",

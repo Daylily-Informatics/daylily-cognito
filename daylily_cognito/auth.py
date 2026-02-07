@@ -50,10 +50,13 @@ class SettingsProtocol(Protocol):
 
     This allows CognitoAuth to work with any settings object that implements
     validate_email_domain(), without requiring a specific import.
+
+    Implementations may use an allowlist (permitted domains), a blocklist
+    (denied domains), or any combination.
     """
 
     def validate_email_domain(self, email: str) -> tuple[bool, str]:
-        """Validate email domain against whitelist.
+        """Validate email domain against allowlist.
 
         Args:
             email: Email address to validate
@@ -355,13 +358,13 @@ class CognitoAuth:
             raise
 
     def _validate_email_domain(self, email: str) -> None:
-        """Validate email domain against whitelist if settings configured.
+        """Validate email domain against allowlist if settings configured.
 
         Args:
             email: Email address to validate
 
         Raises:
-            HTTPException: If domain is not whitelisted (403 Forbidden)
+            HTTPException: If domain is not on the allowlist (403 Forbidden)
         """
         if self.settings is None:
             return  # No settings = no domain validation
@@ -391,10 +394,10 @@ class CognitoAuth:
             User details dict
 
         Raises:
-            HTTPException: If email domain is not whitelisted
+            HTTPException: If email domain is not on the allowlist
             ValueError: If user already exists
         """
-        # Validate email domain against whitelist
+        # Validate email domain against allowlist
         self._validate_email_domain(email)
 
         try:
@@ -573,11 +576,11 @@ class CognitoAuth:
                 the user will be forced to change it at next sign-in.
 
         Raises:
-            HTTPException: If email domain is not whitelisted
+            HTTPException: If email domain is not on the allowlist
             ValueError: For user-facing errors (e.g. invalid password)
             ClientError: For unexpected AWS API errors
         """
-        # Validate email domain against whitelist
+        # Validate email domain against allowlist
         self._validate_email_domain(email)
 
         if not self.user_pool_id:
@@ -615,11 +618,11 @@ class CognitoAuth:
             Dict containing authentication tokens (AccessToken, IdToken, RefreshToken)
 
         Raises:
-            HTTPException: If email domain is not whitelisted
+            HTTPException: If email domain is not on the allowlist
             ValueError: If authentication fails (invalid credentials)
             ClientError: If there's an AWS API error
         """
-        # Validate email domain against whitelist
+        # Validate email domain against allowlist
         self._validate_email_domain(email)
 
         try:
@@ -752,10 +755,10 @@ class CognitoAuth:
             email: User's email address
 
         Raises:
-            HTTPException: If email domain is not whitelisted
+            HTTPException: If email domain is not on the allowlist
             ValueError: If the request fails
         """
-        # Validate email domain against whitelist
+        # Validate email domain against allowlist
         self._validate_email_domain(email)
 
         try:
