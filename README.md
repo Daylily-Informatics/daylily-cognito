@@ -99,32 +99,86 @@ config = CognitoConfig.from_legacy_env()
 
 ## CLI Usage
 
-The `daycog` CLI provides commands for managing Cognito resources:
+The `daycog` CLI is the operational interface for Cognito management in this repo.
+
+### Shell Setup
+
+Use the helper script so the venv/CLI are ready and shell env loading works:
 
 ```bash
-# Check configuration status
+source ./daycog_activate
+```
+
+This script:
+- creates/activates `.venv`
+- installs this repo editable
+- installs shell completion
+- defines a shell wrapper so `daycog setup` can export values into your current shell
+- loads `~/.config/daycog/default.env` if present
+
+### Core Commands
+
+```bash
+# Show CLI help
+daycog --help
+
+# Check current Cognito config/status
 daycog status
 
-# Create user pool and app client
-daycog setup --name my-pool --port 8001
+# Create pool + app client
+daycog setup --name my-pool --port 8001 --profile my-aws-profile --region us-east-1
 
-# List users
+# List all pools in a region
+daycog list-pools --profile my-aws-profile --region us-east-1
+
+# Delete one pool by name or ID
+daycog delete-pool --pool-name my-pool --profile my-aws-profile --region us-east-1 --force
+daycog delete-pool --pool-id us-east-1_abc123 --profile my-aws-profile --region us-east-1 --force
+
+# User management
 daycog list-users
-
-# Add a user
-daycog add-user user@example.com
-
-# Set user password
+daycog add-user user@example.com --password Secure1234
 daycog set-password --email user@example.com --password NewPass123
-
-# Delete a user
-daycog delete-user --email user@example.com
-
-# Delete all users (use with caution!)
+daycog delete-user --email user@example.com --force
 daycog delete-all-users --force
+```
 
-# Delete the entire pool
-daycog teardown --force
+### `setup` Behavior
+
+`daycog setup` resolves AWS context in this order:
+1. `--profile`, `--region`
+2. `AWS_PROFILE`, `AWS_REGION`
+
+If either value is missing, setup exits with an error.
+
+On success, setup writes/updates:
+- `~/.config/daycog/<pool-name>.env`
+- `~/.config/daycog/default.env`
+
+with:
+- `AWS_PROFILE`
+- `AWS_REGION`
+- `COGNITO_REGION`
+- `COGNITO_USER_POOL_ID`
+- `COGNITO_APP_CLIENT_ID`
+- `COGNITO_CALLBACK_URL`
+
+If you pass `--print-exports`, setup also prints shell `export ...` lines.
+
+### Config File Commands
+
+```bash
+# Print default config file path and contents
+daycog config print
+
+# Print specific pool config path and contents
+daycog config print --pool-name my-pool
+
+# Create per-pool config from AWS and update default config
+daycog config create --pool-name my-pool --profile my-aws-profile --region us-east-1
+
+# Update per-pool config from AWS and update default config
+daycog config update --pool-name my-pool --profile my-aws-profile --region us-east-1
 ```
 
 ### Multi-Config CLI Usage
@@ -143,6 +197,9 @@ export DAYCOG_DEV_APP_CLIENT_ID=client_dev
 daycog --config PROD status
 daycog --config DEV list-users
 ```
+
+Note: `daycog config create/update` use AWS lookups with `--profile`/`--region` (or `AWS_*`) and are separate from `--config NAME`.
+If a pool has multiple app clients, `config create/update` use the first client returned by AWS.
 
 ## FastAPI Integration
 

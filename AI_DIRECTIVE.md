@@ -1,55 +1,82 @@
 # AI Directive: daylily-cognito
 
-## Primary interface
-Use this repository through the `daycog` CLI.
-Do not treat this repo as a standalone app server; it is a Cognito/auth library plus operational CLI.
+## Operational Policy
+Use this repository through `daycog` for Cognito operations.
+Do not run direct AWS Cognito CLI/API commands (`aws cognito-idp ...`) when this library is specified as the operational path.
 
-## Environment setup
-1. From repo root, source:
-   ```sh
-   source ./daycog_activate
-   ```
-2. This creates/activates `.venv`, installs the repo editable, and makes `daycog` available.
+If asked to perform Cognito pool/user/client lifecycle actions, use `daycog` commands.
 
-## CLI command
-- Executable: `daycog`
-- Help: `daycog --help`
+## Environment Bootstrap
+From repo root, always start with:
 
-## Required AWS context
-Most commands require:
+```sh
+source ./daycog_activate
+```
+
+This prepares `.venv`, installs this repo editable, installs completion, and loads `~/.config/daycog/default.env` if present.
+It also wraps `daycog setup` so exported values are applied to the current shell.
+
+## AWS Context Rules
+Many commands require AWS profile/region.
+
+Resolution order for commands that accept flags:
+1. `--profile`, `--region`
+2. `AWS_PROFILE`, `AWS_REGION`
+
+If still missing, the command errors.
+
+## Required CLI Usage
+
+### Pool lifecycle
+```sh
+daycog list-pools --profile <profile> --region <region>
+daycog setup --name <pool-name> --port <port> --profile <profile> --region <region>
+daycog delete-pool --pool-name <pool-name> --profile <profile> --region <region> --force
+```
+
+### User lifecycle
+```sh
+daycog list-users
+daycog add-user <email> --password <password>
+daycog set-password --email <email> --password <password>
+daycog delete-user --email <email> --force
+daycog delete-all-users --force
+```
+
+### Auth/client maintenance
+```sh
+daycog status
+daycog fix-auth-flows
+daycog setup-google --client-id <id> --client-secret <secret>
+```
+
+## Config Files
+`daycog setup` writes/updates:
+- `~/.config/daycog/<pool-name>.env`
+- `~/.config/daycog/default.env`
+
+These files contain:
 - `AWS_PROFILE`
-- Region context (usually `AWS_REGION`)
+- `AWS_REGION`
+- `COGNITO_REGION`
+- `COGNITO_USER_POOL_ID`
+- `COGNITO_APP_CLIENT_ID`
+- `COGNITO_CALLBACK_URL`
 
-### `daycog setup` region/profile rules
-`setup` uses this order:
-1. `--profile` and `--region` flags
-2. `AWS_PROFILE` and `AWS_REGION` environment variables
+## `daycog config` commands
+Use these for file inspection/sync:
 
-If either profile or region is still missing, `setup` exits with an error.
-If flags are provided, `setup` sets `AWS_PROFILE` and `AWS_REGION` in the CLI process.
+```sh
+daycog config print
+daycog config print --pool-name <pool-name>
+daycog config create --pool-name <pool-name> --profile <profile> --region <region>
+daycog config update --pool-name <pool-name> --profile <profile> --region <region>
+```
 
-## Recommended usage flow
-1. Check status:
-   ```sh
-   daycog status
-   ```
-2. Create pool + client:
-   ```sh
-   daycog setup --name my-pool --port 8001 --profile my-aws-profile --region us-west-2
-   ```
-3. List users:
-   ```sh
-   daycog list-users
-   ```
-4. Add a user:
-   ```sh
-   daycog add-user user@example.com --password 'Secure1234'
-   ```
+`config create/update` query AWS for pool details and keep `default.env` aligned with the selected pool.
+If multiple app clients exist in a pool, the CLI uses the first client returned by AWS.
 
-## High-impact commands (use intentionally)
-- `daycog delete-user --email ...`
-- `daycog delete-all-users --force`
-- `daycog teardown --force`
-
-## Multi-config mode
-You can also pass `--config NAME` and use `DAYCOG_<NAME>_*` vars for app settings. This is separate from AWS profile/region used by `setup`.
+## Guardrails for Agents
+- Prefer `daycog` over ad-hoc boto3 scripts for operational actions.
+- Do not use `aws cognito-idp` directly when this repo is designated for operations.
+- Use `--force` only for destructive commands when explicitly intended.
