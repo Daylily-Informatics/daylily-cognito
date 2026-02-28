@@ -37,6 +37,7 @@ daycog edit-app --pool-name <pool-name> --app-name <app-name> --profile <profile
 daycog remove-app --pool-name <pool-name> --app-name <app-name> --profile <profile> --region <region> --force
 daycog add-google-idp --pool-name <pool-name> --app-name <app-name> --profile <profile> --region <region>
 daycog delete-pool --pool-name <pool-name> --profile <profile> --region <region> --force
+daycog delete-pool --pool-name <pool-name> --profile <profile> --region <region> --delete-domain-first --force
 ```
 
 For setup customization, prefer `daycog setup` flags over direct AWS changes:
@@ -71,7 +72,9 @@ These files contain:
 - `COGNITO_REGION`
 - `COGNITO_USER_POOL_ID`
 - `COGNITO_APP_CLIENT_ID`
+- `COGNITO_CLIENT_NAME`
 - `COGNITO_CALLBACK_URL`
+- `COGNITO_LOGOUT_URL` (if configured)
 
 ## `daycog config` commands
 Use these for file inspection/sync:

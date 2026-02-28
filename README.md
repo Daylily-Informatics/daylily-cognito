@@ -198,7 +198,9 @@ with:
 - `COGNITO_REGION`
 - `COGNITO_USER_POOL_ID`
 - `COGNITO_APP_CLIENT_ID`
+- `COGNITO_CLIENT_NAME`
 - `COGNITO_CALLBACK_URL`
+- `COGNITO_LOGOUT_URL` (when set)
 
 If you pass `--print-exports`, setup also prints shell `export ...` lines.
 
