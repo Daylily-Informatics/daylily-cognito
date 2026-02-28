@@ -70,6 +70,51 @@ def _resolve_profile_region(profile: Optional[str], region: Optional[str]) -> tu
     return resolved_profile, resolved_region
 
 
+def _parse_csv(value: str) -> List[str]:
+    """Parse comma-separated values into a normalized list."""
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _parse_tags(value: Optional[str]) -> Dict[str, str]:
+    """Parse tag input 'k=v,k2=v2' into a dictionary."""
+    parsed: Dict[str, str] = {}
+    if not value:
+        return parsed
+    for raw in value.split(","):
+        item = raw.strip()
+        if not item:
+            continue
+        if "=" not in item:
+            console.print(f"[red]✗[/red]  Invalid tag format: {item}. Use key=value")
+            raise typer.Exit(1)
+        key, tag_value = item.split("=", 1)
+        key = key.strip()
+        tag_value = tag_value.strip()
+        if not key:
+            console.print(f"[red]✗[/red]  Invalid empty tag key in: {item}")
+            raise typer.Exit(1)
+        parsed[key] = tag_value
+    return parsed
+
+
+def _resolve_callback_url(callback_url: Optional[str], port: int, callback_path: str) -> str:
+    """Resolve callback URL from explicit URL or localhost template."""
+    if callback_url:
+        return callback_url
+    path = callback_path if callback_path.startswith("/") else f"/{callback_path}"
+    return f"http://localhost:{port}{path}"
+
+
+def _resolve_mfa_configuration(mfa: str) -> str:
+    """Map CLI MFA value to Cognito API value."""
+    normalized = mfa.strip().lower()
+    mapping = {"off": "OFF", "optional": "OPTIONAL", "required": "ON"}
+    if normalized not in mapping:
+        console.print("[red]✗[/red]  Invalid --mfa value. Use one of: off, optional, required")
+        raise typer.Exit(1)
+    return mapping[normalized]
+
+
 def _get_pool_details_by_name(pool_name: str, profile: str, region: str) -> Dict[str, str]:
     """Look up pool and a client ID by pool name."""
     import boto3
@@ -143,7 +188,9 @@ def _render_env_lines(values: Dict[str, str]) -> List[str]:
         "COGNITO_REGION",
         "COGNITO_USER_POOL_ID",
         "COGNITO_APP_CLIENT_ID",
+        "COGNITO_CLIENT_NAME",
         "COGNITO_CALLBACK_URL",
+        "COGNITO_LOGOUT_URL",
         "GOOGLE_CLIENT_ID",
         "GOOGLE_CLIENT_SECRET",
         "COGNITO_DOMAIN",
@@ -186,8 +233,12 @@ def _collect_known_cli_values() -> Dict[str, str]:
         values["COGNITO_REGION"] = env["COGNITO_REGION"]
     if env.get("COGNITO_USER_POOL_ID"):
         values["COGNITO_USER_POOL_ID"] = env["COGNITO_USER_POOL_ID"]
+    if env.get("COGNITO_CLIENT_NAME"):
+        values["COGNITO_CLIENT_NAME"] = env["COGNITO_CLIENT_NAME"]
     if env.get("COGNITO_CALLBACK_URL"):
         values["COGNITO_CALLBACK_URL"] = env["COGNITO_CALLBACK_URL"]
+    if env.get("COGNITO_LOGOUT_URL"):
+        values["COGNITO_LOGOUT_URL"] = env["COGNITO_LOGOUT_URL"]
 
     app_client_id = env.get("COGNITO_APP_CLIENT_ID") or env.get("COGNITO_CLIENT_ID")
     if app_client_id:
@@ -302,7 +353,13 @@ def status() -> None:
 @cognito_app.command("setup")
 def setup(
     pool_name: str = typer.Option("ursa-users", "--name", "-n", help="User pool name"),
+    client_name: Optional[str] = typer.Option(None, "--client-name", help="App client name (default: <pool-name>-client)"),
     port: int = typer.Option(8001, "--port", "-p", help="Server port for callback URL"),
+    callback_path: str = typer.Option(
+        "/auth/callback", "--callback-path", help="Callback path used with --port when --callback-url is not set"
+    ),
+    callback_url: Optional[str] = typer.Option(None, "--callback-url", help="Full callback URL override"),
+    logout_url: Optional[str] = typer.Option(None, "--logout-url", help="Optional logout URL for app client"),
     profile: Optional[str] = typer.Option(
         None,
         "--profile",
@@ -318,6 +375,26 @@ def setup(
         "--print-exports",
         help="Print export commands so callers can eval them in the parent shell",
     ),
+    autoprovision: bool = typer.Option(
+        False,
+        "--autoprovision",
+        help="If set, reuse existing app client by --client-name when present",
+    ),
+    generate_secret: bool = typer.Option(
+        False,
+        "--generate-secret",
+        help="Create app client with a secret (sets GenerateSecret=True)",
+    ),
+    oauth_flows: str = typer.Option("code", "--oauth-flows", help="Comma-separated OAuth flows (e.g. code,implicit)"),
+    scopes: str = typer.Option("openid,email,profile", "--scopes", help="Comma-separated OAuth scopes"),
+    idps: str = typer.Option("COGNITO", "--idp", help="Comma-separated identity providers"),
+    password_min_length: int = typer.Option(8, "--password-min-length", help="Minimum password length"),
+    require_uppercase: bool = typer.Option(True, "--require-uppercase/--no-require-uppercase", help="Require uppercase"),
+    require_lowercase: bool = typer.Option(True, "--require-lowercase/--no-require-lowercase", help="Require lowercase"),
+    require_numbers: bool = typer.Option(True, "--require-numbers/--no-require-numbers", help="Require numbers"),
+    require_symbols: bool = typer.Option(False, "--require-symbols/--no-require-symbols", help="Require symbols"),
+    mfa: str = typer.Option("off", "--mfa", help="MFA mode: off, optional, required"),
+    tags: Optional[str] = typer.Option(None, "--tags", help="Comma-separated tags in key=value format"),
 ):
     """Create Cognito User Pool and App Client."""
     resolved_profile, resolved_region = _resolve_profile_region(profile, region)
@@ -330,6 +407,15 @@ def setup(
 
     try:
         import boto3
+
+        resolved_client_name = client_name or f"{pool_name}-client"
+        resolved_callback_url = _resolve_callback_url(callback_url, port, callback_path)
+        resolved_oauth_flows = _parse_csv(oauth_flows)
+        resolved_scopes = _parse_csv(scopes)
+        resolved_idps = _parse_csv(idps)
+        resolved_tags = _parse_tags(tags)
+        resolved_mfa = _resolve_mfa_configuration(mfa)
+        resolved_logout_urls = [logout_url] if logout_url else []
 
         console.print(f"[dim]Profile: {resolved_profile}[/dim]")
         console.print(f"[dim]Region: {resolved_region}[/dim]")
@@ -348,38 +434,51 @@ def setup(
                 PoolName=pool_name,
                 AutoVerifiedAttributes=["email"],
                 UsernameAttributes=["email"],
+                MfaConfiguration=resolved_mfa,
                 Policies={
                     "PasswordPolicy": {
-                        "MinimumLength": 8,
-                        "RequireUppercase": True,
-                        "RequireLowercase": True,
-                        "RequireNumbers": True,
-                        "RequireSymbols": False,
+                        "MinimumLength": password_min_length,
+                        "RequireUppercase": require_uppercase,
+                        "RequireLowercase": require_lowercase,
+                        "RequireNumbers": require_numbers,
+                        "RequireSymbols": require_symbols,
                     }
                 },
+                UserPoolTags=resolved_tags,
             )
             pool_id = pool["UserPool"]["Id"]
             console.print(f"[green]✓[/green]  Created user pool: {pool_name}")
 
-        # Create app client
-        callback_url = f"http://localhost:{port}/auth/callback"
-        client = cognito.create_user_pool_client(
-            UserPoolId=pool_id,
-            ClientName=f"{pool_name}-client",
-            GenerateSecret=False,
-            ExplicitAuthFlows=[
-                "ALLOW_USER_PASSWORD_AUTH",
-                "ALLOW_ADMIN_USER_PASSWORD_AUTH",  # Required for admin_initiate_auth
-                "ALLOW_REFRESH_TOKEN_AUTH",
-            ],
-            AllowedOAuthFlows=["code"],
-            AllowedOAuthScopes=["openid", "email", "profile"],
-            AllowedOAuthFlowsUserPoolClient=True,
-            CallbackURLs=[callback_url],
-            SupportedIdentityProviders=["COGNITO"],
-        )
-        client_id = client["UserPoolClient"]["ClientId"]
-        console.print(f"[green]✓[/green]  Created app client: {client_id}")
+        # Create or reuse app client
+        client_id = ""
+        if autoprovision:
+            existing_clients = cognito.list_user_pool_clients(UserPoolId=pool_id, MaxResults=60).get(
+                "UserPoolClients", []
+            )
+            existing_match = next((c for c in existing_clients if c.get("ClientName") == resolved_client_name), None)
+            if existing_match:
+                client_id = existing_match["ClientId"]
+                console.print(f"[yellow]⚠[/yellow]  Reusing app client '{resolved_client_name}': {client_id}")
+
+        if not client_id:
+            client = cognito.create_user_pool_client(
+                UserPoolId=pool_id,
+                ClientName=resolved_client_name,
+                GenerateSecret=generate_secret,
+                ExplicitAuthFlows=[
+                    "ALLOW_USER_PASSWORD_AUTH",
+                    "ALLOW_ADMIN_USER_PASSWORD_AUTH",  # Required for admin_initiate_auth
+                    "ALLOW_REFRESH_TOKEN_AUTH",
+                ],
+                AllowedOAuthFlows=resolved_oauth_flows,
+                AllowedOAuthScopes=resolved_scopes,
+                AllowedOAuthFlowsUserPoolClient=True,
+                CallbackURLs=[resolved_callback_url],
+                LogoutURLs=resolved_logout_urls,
+                SupportedIdentityProviders=resolved_idps,
+            )
+            client_id = client["UserPoolClient"]["ClientId"]
+            console.print(f"[green]✓[/green]  Created app client: {client_id}")
 
         # Show configuration
         setup_values = {
@@ -388,8 +487,11 @@ def setup(
             "COGNITO_REGION": resolved_region,
             "COGNITO_USER_POOL_ID": pool_id,
             "COGNITO_APP_CLIENT_ID": client_id,
-            "COGNITO_CALLBACK_URL": callback_url,
+            "COGNITO_CALLBACK_URL": resolved_callback_url,
+            "COGNITO_CLIENT_NAME": resolved_client_name,
         }
+        if logout_url:
+            setup_values["COGNITO_LOGOUT_URL"] = logout_url
         pool_config_path = _pool_config_path(pool_name)
         default_config_path = _default_config_path()
 
@@ -408,7 +510,9 @@ def setup(
         console.print("\nValues written to default config:")
         console.print(f"   [cyan]COGNITO_USER_POOL_ID={pool_id}[/cyan]")
         console.print(f"   [cyan]COGNITO_APP_CLIENT_ID={client_id}[/cyan]")
-        console.print(f"   [cyan]COGNITO_CALLBACK_URL={callback_url}[/cyan]")
+        console.print(f"   [cyan]COGNITO_CALLBACK_URL={resolved_callback_url}[/cyan]")
+        if logout_url:
+            console.print(f"   [cyan]COGNITO_LOGOUT_URL={logout_url}[/cyan]")
         if print_exports:
             console.print("\n[bold]Shell exports:[/bold]")
             console.print(f'export AWS_PROFILE="{resolved_profile}"')
@@ -416,7 +520,10 @@ def setup(
             console.print(f'export COGNITO_REGION="{resolved_region}"')
             console.print(f'export COGNITO_USER_POOL_ID="{pool_id}"')
             console.print(f'export COGNITO_APP_CLIENT_ID="{client_id}"')
-            console.print(f'export COGNITO_CALLBACK_URL="{callback_url}"')
+            console.print(f'export COGNITO_CALLBACK_URL="{resolved_callback_url}"')
+            console.print(f'export COGNITO_CLIENT_NAME="{resolved_client_name}"')
+            if logout_url:
+                console.print(f'export COGNITO_LOGOUT_URL="{logout_url}"')
 
     except Exception as e:
         console.print(f"[red]✗[/red]  Error: {e}")

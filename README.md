@@ -128,6 +128,21 @@ daycog status
 # Create pool + app client
 daycog setup --name my-pool --port 8001 --profile my-aws-profile --region us-east-1
 
+# Advanced setup (client name, callback/logout URLs, OAuth, MFA, tags, autoprovision)
+daycog setup \
+  --name my-pool \
+  --client-name my-app-client \
+  --callback-url http://localhost:8001/auth/callback \
+  --logout-url http://localhost:8001/ \
+  --oauth-flows code \
+  --scopes openid,email,profile \
+  --idp COGNITO \
+  --mfa optional \
+  --tags env=dev,owner=platform \
+  --autoprovision \
+  --profile my-aws-profile \
+  --region us-east-1
+
 # List all pools in a region
 daycog list-pools --profile my-aws-profile --region us-east-1
 
@@ -164,6 +179,23 @@ with:
 - `COGNITO_CALLBACK_URL`
 
 If you pass `--print-exports`, setup also prints shell `export ...` lines.
+
+Additional setup options:
+- `--client-name` (default: `<pool-name>-client`)
+- `--callback-url` or `--callback-path` + `--port`
+- `--logout-url`
+- `--generate-secret`
+- `--oauth-flows` (comma-separated)
+- `--scopes` (comma-separated)
+- `--idp` (comma-separated)
+- `--password-min-length`
+- `--require-uppercase/--no-require-uppercase`
+- `--require-lowercase/--no-require-lowercase`
+- `--require-numbers/--no-require-numbers`
+- `--require-symbols/--no-require-symbols`
+- `--mfa` (`off`, `optional`, `required`)
+- `--tags` (`key=value,key2=value2`)
+- `--autoprovision` (reuse existing app client by `--client-name` when found)
 
 ### Config File Commands
 

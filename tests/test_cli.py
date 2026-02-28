@@ -136,6 +136,78 @@ class TestSetupCommand:
         assert 'export COGNITO_APP_CLIENT_ID="new-cid"' in result.output
         assert 'export COGNITO_CALLBACK_URL="http://localhost:8001/auth/callback"' in result.output
 
+    @mock.patch.dict(os.environ, _BASE_ENV, clear=False)
+    @mock.patch("boto3.client")
+    def test_setup_accepts_advanced_creation_flags(self, mock_boto_client: mock.MagicMock, tmp_path) -> None:
+        mc = _mock_cognito_client()
+        mock_boto_client.return_value = mc
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            result = runner.invoke(
+                cognito_app,
+                [
+                    "setup",
+                    "--name",
+                    "my-pool",
+                    "--client-name",
+                    "my-client",
+                    "--callback-path",
+                    "/cb",
+                    "--logout-url",
+                    "http://localhost:8001/logout",
+                    "--generate-secret",
+                    "--oauth-flows",
+                    "code,implicit",
+                    "--scopes",
+                    "openid,email",
+                    "--idp",
+                    "COGNITO,Google",
+                    "--password-min-length",
+                    "12",
+                    "--no-require-symbols",
+                    "--mfa",
+                    "optional",
+                    "--tags",
+                    "env=dev,owner=team",
+                ],
+            )
+        assert result.exit_code == 0
+        pool_kwargs = mc.create_user_pool.call_args.kwargs
+        assert pool_kwargs["MfaConfiguration"] == "OPTIONAL"
+        assert pool_kwargs["Policies"]["PasswordPolicy"]["MinimumLength"] == 12
+        assert pool_kwargs["Policies"]["PasswordPolicy"]["RequireUppercase"] is True
+        assert pool_kwargs["Policies"]["PasswordPolicy"]["RequireLowercase"] is True
+        assert pool_kwargs["Policies"]["PasswordPolicy"]["RequireNumbers"] is True
+        assert pool_kwargs["Policies"]["PasswordPolicy"]["RequireSymbols"] is False
+        assert pool_kwargs["UserPoolTags"] == {"env": "dev", "owner": "team"}
+
+        client_kwargs = mc.create_user_pool_client.call_args.kwargs
+        assert client_kwargs["ClientName"] == "my-client"
+        assert client_kwargs["GenerateSecret"] is True
+        assert client_kwargs["AllowedOAuthFlows"] == ["code", "implicit"]
+        assert client_kwargs["AllowedOAuthScopes"] == ["openid", "email"]
+        assert client_kwargs["SupportedIdentityProviders"] == ["COGNITO", "Google"]
+        assert client_kwargs["CallbackURLs"] == ["http://localhost:8001/cb"]
+        assert client_kwargs["LogoutURLs"] == ["http://localhost:8001/logout"]
+
+    @mock.patch.dict(os.environ, _BASE_ENV, clear=False)
+    @mock.patch("boto3.client")
+    def test_setup_autoprovision_reuses_existing_client(self, mock_boto_client: mock.MagicMock, tmp_path) -> None:
+        mc = _mock_cognito_client()
+        mc.list_user_pool_clients.return_value = {
+            "UserPoolClients": [{"ClientName": "my-client", "ClientId": "existing-cid"}]
+        }
+        mock_boto_client.return_value = mc
+
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            result = runner.invoke(
+                cognito_app,
+                ["setup", "--name", "my-pool", "--client-name", "my-client", "--autoprovision"],
+            )
+
+        assert result.exit_code == 0
+        assert "Reusing app client 'my-client': existing-cid" in result.output
+        mc.create_user_pool_client.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # config

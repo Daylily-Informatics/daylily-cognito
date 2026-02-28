@@ -34,6 +34,10 @@ daycog setup --name <pool-name> --port <port> --profile <profile> --region <regi
 daycog delete-pool --pool-name <pool-name> --profile <profile> --region <region> --force
 ```
 
+For setup customization, prefer `daycog setup` flags over direct AWS changes:
+`--client-name`, `--callback-url`/`--callback-path`, `--logout-url`, `--generate-secret`,
+`--oauth-flows`, `--scopes`, `--idp`, password policy flags, `--mfa`, `--tags`, `--autoprovision`.
+
 ### User lifecycle
 ```sh
 daycog list-users
