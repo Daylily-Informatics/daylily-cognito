@@ -50,6 +50,11 @@ def _default_config_path() -> Path:
     return Path.home() / ".config" / "daycog" / "default.env"
 
 
+def _config_dir() -> Path:
+    """Return daycog config directory."""
+    return Path.home() / ".config" / "daycog"
+
+
 def _pool_config_path(pool_name: str, region: str) -> Path:
     """Return the per-pool config file path, scoped by region."""
     return Path.home() / ".config" / "daycog" / f"{pool_name}.{region}.env"
@@ -63,7 +68,31 @@ def _sanitize_filename_part(value: str) -> str:
 def _app_config_path(pool_name: str, region: str, client_name: str) -> Path:
     """Return per-app config file path for a pool/region."""
     safe_client = _sanitize_filename_part(client_name)
-    return Path.home() / ".config" / "daycog" / f"{pool_name}.{region}.{safe_client}.env"
+    return _config_dir() / f"{pool_name}.{region}.{safe_client}.env"
+
+
+def _cleanup_pool_config_files(pool_name: str, region: str, pool_id: str) -> List[Path]:
+    """Delete config files for a deleted pool and return removed paths."""
+    removed: List[Path] = []
+    cfg_dir = _config_dir()
+    if cfg_dir.exists():
+        for path in cfg_dir.glob(f"{pool_name}.{region}*.env"):
+            try:
+                path.unlink()
+                removed.append(path)
+            except Exception:
+                pass
+
+    default_path = _default_config_path()
+    default_values = _read_env_file(default_path)
+    if default_path.exists() and default_values.get("COGNITO_USER_POOL_ID") == pool_id:
+        try:
+            default_path.unlink()
+            removed.append(default_path)
+        except Exception:
+            pass
+
+    return removed
 
 
 def _resolve_profile_region(profile: Optional[str], region: Optional[str]) -> tuple[str, str]:
@@ -424,6 +453,12 @@ def status() -> None:
 def setup(
     pool_name: str = typer.Option("ursa-users", "--name", "-n", help="User pool name"),
     client_name: Optional[str] = typer.Option(None, "--client-name", help="App client name (default: <pool-name>-client)"),
+    domain_prefix: Optional[str] = typer.Option(
+        None, "--domain-prefix", help="Hosted UI domain prefix (default: pool name)"
+    ),
+    attach_domain: bool = typer.Option(
+        True, "--attach-domain/--no-attach-domain", help="Attach/ensure Cognito Hosted UI domain"
+    ),
     port: int = typer.Option(8001, "--port", "-p", help="Server port for callback URL"),
     callback_path: str = typer.Option(
         "/auth/callback", "--callback-path", help="Callback path used with --port when --callback-url is not set"
@@ -479,6 +514,7 @@ def setup(
         import boto3
 
         resolved_client_name = client_name or f"{pool_name}-client"
+        resolved_domain_prefix = domain_prefix or pool_name
         resolved_callback_url = _resolve_callback_url(callback_url, port, callback_path)
         resolved_oauth_flows = _parse_csv(oauth_flows)
         resolved_scopes = _parse_csv(scopes)
@@ -518,6 +554,22 @@ def setup(
             )
             pool_id = pool["UserPool"]["Id"]
             console.print(f"[green]✓[/green]  Created user pool: {pool_name}")
+
+        resolved_cognito_domain: Optional[str] = None
+        if attach_domain:
+            pool_info = cognito.describe_user_pool(UserPoolId=pool_id)["UserPool"]
+            current_domain = pool_info.get("Domain")
+            if current_domain:
+                if current_domain != resolved_domain_prefix:
+                    console.print(
+                        f"[yellow]⚠[/yellow]  Pool already has domain '{current_domain}' "
+                        f"(requested '{resolved_domain_prefix}'). Keeping existing domain."
+                    )
+                resolved_cognito_domain = f"{current_domain}.auth.{resolved_region}.amazoncognito.com"
+            else:
+                console.print(f"[cyan]Attaching hosted UI domain: {resolved_domain_prefix}[/cyan]")
+                cognito.create_user_pool_domain(UserPoolId=pool_id, Domain=resolved_domain_prefix)
+                resolved_cognito_domain = f"{resolved_domain_prefix}.auth.{resolved_region}.amazoncognito.com"
 
         # Create or reuse app client
         client_id = ""
@@ -562,9 +614,18 @@ def setup(
         }
         if logout_url:
             setup_values["COGNITO_LOGOUT_URL"] = logout_url
+        if resolved_cognito_domain:
+            setup_values["COGNITO_DOMAIN"] = resolved_cognito_domain
         pool_config_path = _pool_config_path(pool_name, resolved_region)
         app_config_path = _app_config_path(pool_name, resolved_region, resolved_client_name)
         default_config_path = _default_config_path()
+
+        if pool_config_path.exists():
+            console.print(f"[yellow]⚠[/yellow]  Config file already exists, updating: {pool_config_path}")
+        if app_config_path.exists():
+            console.print(f"[yellow]⚠[/yellow]  Config file already exists, updating: {app_config_path}")
+        if default_config_path.exists():
+            console.print(f"[yellow]⚠[/yellow]  Config file already exists, updating: {default_config_path}")
 
         pool_file_values = _read_env_file(pool_config_path)
         pool_file_values.update(setup_values)
@@ -589,6 +650,8 @@ def setup(
         console.print(f"   [cyan]COGNITO_CALLBACK_URL={resolved_callback_url}[/cyan]")
         if logout_url:
             console.print(f"   [cyan]COGNITO_LOGOUT_URL={logout_url}[/cyan]")
+        if resolved_cognito_domain:
+            console.print(f"   [cyan]COGNITO_DOMAIN={resolved_cognito_domain}[/cyan]")
         if print_exports:
             console.print("\n[bold]Shell exports:[/bold]")
             console.print(f'export AWS_PROFILE="{resolved_profile}"')
@@ -600,6 +663,8 @@ def setup(
             console.print(f'export COGNITO_CLIENT_NAME="{resolved_client_name}"')
             if logout_url:
                 console.print(f'export COGNITO_LOGOUT_URL="{logout_url}"')
+            if resolved_cognito_domain:
+                console.print(f'export COGNITO_DOMAIN="{resolved_cognito_domain}"')
 
     except Exception as e:
         console.print(f"[red]✗[/red]  Error: {e}")
@@ -1082,6 +1147,12 @@ def add_google_idp(
 def setup_with_google(
     pool_name: str = typer.Option("ursa-users", "--name", "-n", help="User pool name"),
     client_name: Optional[str] = typer.Option(None, "--client-name", help="App client name (default: <pool-name>-client)"),
+    domain_prefix: Optional[str] = typer.Option(
+        None, "--domain-prefix", help="Hosted UI domain prefix (default: pool name)"
+    ),
+    attach_domain: bool = typer.Option(
+        True, "--attach-domain/--no-attach-domain", help="Attach/ensure Cognito Hosted UI domain"
+    ),
     port: int = typer.Option(8001, "--port", "-p", help="Server port for callback URL"),
     callback_path: str = typer.Option(
         "/auth/callback", "--callback-path", help="Callback path used with --port when --callback-url is not set"
@@ -1122,6 +1193,8 @@ def setup_with_google(
     setup(
         pool_name=pool_name,
         client_name=resolved_client_name,
+        domain_prefix=domain_prefix,
+        attach_domain=attach_domain,
         port=port,
         callback_path=callback_path,
         callback_url=callback_url,
@@ -1220,6 +1293,9 @@ def delete_pool(
 
         cognito.delete_user_pool(UserPoolId=resolved_pool_id)
         console.print(f"[green]✓[/green]  Deleted Cognito pool: {resolved_pool_name} ({resolved_pool_id})")
+        removed_paths = _cleanup_pool_config_files(resolved_pool_name, resolved_region, resolved_pool_id)
+        for path in removed_paths:
+            console.print(f"[dim]Removed config file: {path}[/dim]")
     except Exception as e:
         console.print(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)

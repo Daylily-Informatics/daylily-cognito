@@ -132,6 +132,7 @@ daycog setup --name my-pool --port 8001 --profile my-aws-profile --region us-eas
 daycog setup \
   --name my-pool \
   --client-name my-app-client \
+  --domain-prefix my-pool \
   --callback-url http://localhost:8001/auth/callback \
   --logout-url http://localhost:8001/ \
   --oauth-flows code \
@@ -209,11 +210,14 @@ with:
 - `COGNITO_CLIENT_NAME`
 - `COGNITO_CALLBACK_URL`
 - `COGNITO_LOGOUT_URL` (when set)
+- `COGNITO_DOMAIN` (when Hosted UI domain is attached)
 
 If you pass `--print-exports`, setup also prints shell `export ...` lines.
 
 Additional setup options:
 - `--client-name` (default: `<pool-name>-client`)
+- `--domain-prefix` (default: pool name, used for Hosted UI domain)
+- `--attach-domain/--no-attach-domain` (default: attach domain)
 - `--callback-url` or `--callback-path` + `--port`
 - `--logout-url`
 - `--generate-secret`
@@ -242,6 +246,8 @@ For a single pool with multiple app clients, daycog now stores:
 `daycog setup` always writes all three for the created/reused app.
 `daycog add-app` / `daycog edit-app` always write the app file, and update pool/default when `--set-default` is passed.
 `daycog remove-app` deletes the app in Cognito and, by default, removes the app file.
+`daycog delete-pool` removes matching pool/app config files; it also removes `default.env` when it points at the deleted pool.
+If setup-target config files already exist, `daycog setup` prints warnings and updates them in place.
 
 ### Config File Commands
 

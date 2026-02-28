@@ -42,7 +42,8 @@ daycog delete-pool --pool-name <pool-name> --profile <profile> --region <region>
 ```
 
 For setup customization, prefer `daycog setup` flags over direct AWS changes:
-`--client-name`, `--callback-url`/`--callback-path`, `--logout-url`, `--generate-secret`,
+`--client-name`, `--domain-prefix`, `--attach-domain/--no-attach-domain`,
+`--callback-url`/`--callback-path`, `--logout-url`, `--generate-secret`,
 `--oauth-flows`, `--scopes`, `--idp`, password policy flags, `--mfa`, `--tags`, `--autoprovision`.
 
 ### User lifecycle
@@ -76,6 +77,7 @@ These files contain:
 - `COGNITO_CLIENT_NAME`
 - `COGNITO_CALLBACK_URL`
 - `COGNITO_LOGOUT_URL` (if configured)
+- `COGNITO_DOMAIN` (if Hosted UI domain attached)
 
 ## `daycog config` commands
 Use these for file inspection/sync:
@@ -96,6 +98,8 @@ Multi-app guidance:
 - Pool file (`<pool>.<region>.env`) stores the selected app context for that pool/region.
 - `default.env` stores active global context.
 - Use `--set-default` on `add-app`/`edit-app` when the new app should become active in pool/default env files.
+- `delete-pool` removes pool/app config files for that pool+region and removes `default.env` if it references that pool ID.
+- `setup` should warn (not fail) when target config files already exist, then update them.
 - For Google federation, use `add-google-idp` with `--google-client-json` or credential flags/env vars.
 - Prefer `setup-with-google` for first-time pool/app provisioning plus Google IdP in one operation.
 - Do not assume Google client secret can be fetched from Google automatically; use provided JSON or env credentials.
