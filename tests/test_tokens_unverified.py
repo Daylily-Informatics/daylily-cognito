@@ -3,12 +3,15 @@
 These tests are skipped if python-jose is not installed.
 """
 
+import builtins
 import time
+from unittest import mock
 
 import pytest
 
 # Skip all tests if jose is not available
 jose = pytest.importorskip("jose", reason="python-jose not installed")
+from jose import ExpiredSignatureError
 
 from fastapi import HTTPException
 
@@ -57,6 +60,20 @@ class TestDecodeJwtUnverified:
 
         assert claims["sub"] == "user123"
         # Note: decode_jwt_unverified does NOT check expiration
+
+    def test_decode_import_error_when_jose_missing(self) -> None:
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "jose":
+                raise ImportError("missing jose")
+            return real_import(name, *args, **kwargs)
+
+        with mock.patch("builtins.__import__", side_effect=fake_import):
+            with pytest.raises(ImportError) as exc_info:
+                decode_jwt_unverified("token")
+
+        assert "python-jose is required for JWT decoding" in str(exc_info.value)
 
 
 class TestVerifyJwtClaimsUnverifiedSignature:
@@ -107,3 +124,26 @@ class TestVerifyJwtClaimsUnverifiedSignature:
 
         assert exc_info.value.status_code == 401
         assert exc_info.value.detail == "Invalid token audience"
+
+    def test_expired_signature_error_branch_maps_to_expired(self) -> None:
+        with mock.patch("jose.jwt.get_unverified_header", return_value={"kid": "x"}):
+            with mock.patch("jose.jwt.decode", side_effect=ExpiredSignatureError("expired")):
+                with pytest.raises(HTTPException) as exc_info:
+                    verify_jwt_claims_unverified_signature("token", expected_client_id="expected_client")
+
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.detail == "Token has expired"
+
+    def test_verify_import_error_when_jose_missing(self) -> None:
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "jose":
+                raise ImportError("missing jose")
+            return real_import(name, *args, **kwargs)
+
+        with mock.patch("builtins.__import__", side_effect=fake_import):
+            with pytest.raises(ImportError) as exc_info:
+                verify_jwt_claims_unverified_signature("token", expected_client_id="expected_client")
+
+        assert "python-jose is required for JWT verification" in str(exc_info.value)
