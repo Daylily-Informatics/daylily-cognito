@@ -242,8 +242,26 @@ class TestCreateCustomerUser:
 # ---------------------------------------------------------------------------
 
 
+_JWKS_VERIFY_PATH = "daylily_cognito.jwks.verify_token_with_jwks"
+
+
 class TestVerifyToken:
-    def test_valid_token(self) -> None:
+    def test_valid_token_with_jwks(self) -> None:
+        """verify_token uses JWKS verification by default."""
+        import time
+
+        auth, _ = _build_auth()
+        claims = {
+            "sub": "user-1",
+            "client_id": "test-client-id",
+            "exp": time.time() + 3600,
+        }
+        with mock.patch(_JWKS_VERIFY_PATH, return_value=claims):
+            result = auth.verify_token("fake.jwt.token")
+        assert result["sub"] == "user-1"
+
+    def test_valid_token_without_signature_verification(self) -> None:
+        """verify_signature=False skips JWKS and uses unverified decode."""
         import time
 
         auth, _ = _build_auth()
@@ -255,7 +273,7 @@ class TestVerifyToken:
         with mock.patch("daylily_cognito.auth.jwt") as mock_jwt:
             mock_jwt.get_unverified_header.return_value = {"alg": "RS256"}
             mock_jwt.decode.return_value = claims
-            result = auth.verify_token("fake.jwt.token")
+            result = auth.verify_token("fake.jwt.token", verify_signature=False)
         assert result["sub"] == "user-1"
 
     def test_expired_token_raises(self) -> None:
@@ -267,9 +285,7 @@ class TestVerifyToken:
             "client_id": "test-client-id",
             "exp": time.time() - 100,
         }
-        with mock.patch("daylily_cognito.auth.jwt") as mock_jwt:
-            mock_jwt.get_unverified_header.return_value = {"alg": "RS256"}
-            mock_jwt.decode.return_value = claims
+        with mock.patch(_JWKS_VERIFY_PATH, return_value=claims):
             with pytest.raises(HTTPException) as exc_info:
                 auth.verify_token("expired.jwt.token")
             assert exc_info.value.status_code == 401
@@ -284,22 +300,34 @@ class TestVerifyToken:
             "client_id": "wrong-client-id",
             "exp": time.time() + 3600,
         }
-        with mock.patch("daylily_cognito.auth.jwt") as mock_jwt:
-            mock_jwt.get_unverified_header.return_value = {"alg": "RS256"}
-            mock_jwt.decode.return_value = claims
+        with mock.patch(_JWKS_VERIFY_PATH, return_value=claims):
             with pytest.raises(HTTPException) as exc_info:
                 auth.verify_token("wrong-aud.jwt.token")
             assert exc_info.value.status_code == 401
 
     def test_jwt_error_raises(self) -> None:
-        auth, _ = _build_auth()
-        with mock.patch("daylily_cognito.auth.jwt") as mock_jwt:
-            # Simulate JWTError via the module-level JWTError variable
-            from jose import JWTError
+        from jose import JWTError
 
-            mock_jwt.get_unverified_header.side_effect = JWTError("bad token")
+        auth, _ = _build_auth()
+        with mock.patch(_JWKS_VERIFY_PATH, side_effect=JWTError("bad")):
             with pytest.raises(HTTPException) as exc_info:
                 auth.verify_token("bad.jwt.token")
+            assert exc_info.value.status_code == 401
+
+    def test_jwks_key_error_raises_401(self) -> None:
+        """KeyError from JWKS cache results in 401."""
+        auth, _ = _build_auth()
+        with mock.patch(_JWKS_VERIFY_PATH, side_effect=KeyError("kid not found")):
+            with pytest.raises(HTTPException) as exc_info:
+                auth.verify_token("fake.jwt.token")
+            assert exc_info.value.status_code == 401
+
+    def test_jwks_runtime_error_raises_401(self) -> None:
+        """RuntimeError from JWKS fetch failure results in 401."""
+        auth, _ = _build_auth()
+        with mock.patch(_JWKS_VERIFY_PATH, side_effect=RuntimeError("fetch failed")):
+            with pytest.raises(HTTPException) as exc_info:
+                auth.verify_token("fake.jwt.token")
             assert exc_info.value.status_code == 401
 
 
@@ -321,9 +349,7 @@ class TestGetCurrentUser:
         auth, _ = _build_auth()
         creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="fake.jwt")
         claims = {"sub": "u1", "client_id": "test-client-id", "exp": time.time() + 3600}
-        with mock.patch("daylily_cognito.auth.jwt") as mock_jwt:
-            mock_jwt.get_unverified_header.return_value = {"alg": "RS256"}
-            mock_jwt.decode.return_value = claims
+        with mock.patch(_JWKS_VERIFY_PATH, return_value=claims):
             result = auth.get_current_user(credentials=creds)
         assert result["sub"] == "u1"
 

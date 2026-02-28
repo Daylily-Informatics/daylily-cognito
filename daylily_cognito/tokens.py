@@ -125,3 +125,76 @@ def verify_jwt_claims_unverified_signature(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication token",
         )
+
+
+
+def verify_jwt_claims(
+    token: str,
+    *,
+    expected_client_id: str,
+    region: str,
+    user_pool_id: str,
+    cache: "JWKSCache | None" = None,
+) -> dict[str, Any]:
+    """Verify JWT claims with full signature verification via JWKS.
+
+    Verifies the token signature against Cognito JWKS keys, then
+    checks expiration and client_id claims.
+
+    Args:
+        token: JWT token string
+        expected_client_id: Expected app client ID (checked against 'client_id' claim)
+        region: AWS region
+        user_pool_id: Cognito User Pool ID
+        cache: Optional JWKSCache instance for key caching
+
+    Returns:
+        Decoded and verified token claims
+
+    Raises:
+        HTTPException(401): If token is invalid, expired, signature fails,
+            or has wrong audience
+        ImportError: If python-jose is not installed
+    """
+    try:
+        from jose import JWTError
+    except ImportError as e:
+        raise ImportError(
+            "python-jose is required for JWT verification. "
+            "Install with: pip install 'python-jose[cryptography]'"
+        ) from e
+
+    from .jwks import JWKSCache, verify_token_with_jwks
+
+    try:
+        claims = verify_token_with_jwks(
+            token, region, user_pool_id, cache=cache
+        )
+
+        # Verify token hasn't expired (manual check for consistent error message)
+        if "exp" in claims:
+            if claims["exp"] < time.time():
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has expired",
+                )
+
+        # Verify audience (app client ID)
+        if claims.get("client_id") != expected_client_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token audience",
+            )
+
+        return claims
+
+    except (KeyError, RuntimeError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        )
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        )

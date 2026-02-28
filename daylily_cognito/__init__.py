@@ -39,7 +39,8 @@ from .oauth import (
     exchange_authorization_code,
     refresh_with_refresh_token,
 )
-from .tokens import decode_jwt_unverified, verify_jwt_claims_unverified_signature
+from .jwks import JWKSCache
+from .tokens import decode_jwt_unverified, verify_jwt_claims, verify_jwt_claims_unverified_signature
 
 __all__ = [
     # Config
@@ -64,7 +65,10 @@ __all__ = [
     "generate_state_token",
     # Tokens
     "decode_jwt_unverified",
+    "verify_jwt_claims",
     "verify_jwt_claims_unverified_signature",
+    # JWKS
+    "JWKSCache",
     # CLI
     "cognito_app",
     "main",
