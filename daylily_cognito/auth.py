@@ -458,8 +458,15 @@ class CognitoAuth:
                     self.user_pool_id,
                     cache=self._jwks_cache,
                 )
+            elif verify_signature and self._jwks_cache is None:
+                # Cannot verify signature without JWKS cache
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Token signature verification requested but JWKS cache is not available. "
+                    "Ensure CognitoAuth is initialized with a valid user_pool_id.",
+                )
             else:
-                # Fallback: no signature verification
+                # Explicitly opted out of signature verification
                 jwt.get_unverified_header(token)
                 claims = jwt.decode(
                     token,

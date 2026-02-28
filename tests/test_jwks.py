@@ -119,6 +119,13 @@ class TestFetchJwks:
             with pytest.raises(RuntimeError, match="JWKS fetch failed"):
                 fetch_jwks("us-west-2", "us-west-2_abc123")
 
+    def test_timeout_raises_runtime_error(self) -> None:
+        import socket
+
+        with mock.patch("daylily_cognito.jwks.urllib.request.urlopen", side_effect=socket.timeout("timed out")):
+            with pytest.raises(RuntimeError, match="JWKS fetch timed out"):
+                fetch_jwks("us-west-2", "us-west-2_abc123")
+
 
 # ---------------------------------------------------------------------------
 # JWKSCache

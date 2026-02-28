@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import socket
 import threading
 import time
 import urllib.error
@@ -52,9 +53,11 @@ def fetch_jwks(region: str, user_pool_id: str) -> dict[str, Any]:
     request = urllib.request.Request(url, method="GET")
 
     try:
-        with urllib.request.urlopen(request) as response:
+        with urllib.request.urlopen(request, timeout=10) as response:
             body = response.read().decode("utf-8")
             return json.loads(body)
+    except socket.timeout as e:
+        raise RuntimeError(f"JWKS fetch timed out for {url}") from e
     except urllib.error.HTTPError as e:
         error_body = e.read().decode("utf-8") if e.fp else ""
         raise RuntimeError(f"JWKS fetch failed: HTTP {e.code} - {error_body}") from e

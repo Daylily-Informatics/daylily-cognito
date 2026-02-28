@@ -330,6 +330,15 @@ class TestVerifyToken:
                 auth.verify_token("fake.jwt.token")
             assert exc_info.value.status_code == 401
 
+    def test_missing_jwks_cache_raises_500(self) -> None:
+        """verify_signature=True with no JWKS cache must fail closed (500)."""
+        auth, _ = _build_auth()
+        auth._jwks_cache = None  # simulate missing cache
+        with pytest.raises(HTTPException) as exc_info:
+            auth.verify_token("fake.jwt.token")
+        assert exc_info.value.status_code == 500
+        assert "JWKS cache is not available" in exc_info.value.detail
+
 
 # ---------------------------------------------------------------------------
 # get_current_user
