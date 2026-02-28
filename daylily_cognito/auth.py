@@ -17,6 +17,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
 
 from .fastapi import security
+from .jwks import JWKSCache
 
 # Optional jose import - only needed if authentication is enabled
 try:
@@ -129,8 +130,10 @@ class CognitoAuth:
 
         # Get JWKS for token validation (will be empty URL if no pool_id yet)
         self.jwks_url = ""
+        self._jwks_cache: JWKSCache | None = None
         if user_pool_id:
             self._update_jwks_url()
+            self._jwks_cache = JWKSCache(region, user_pool_id)
 
     @classmethod
     def create_with_new_pool(
@@ -239,8 +242,9 @@ class CognitoAuth:
             raise
 
     def _update_jwks_url(self) -> None:
-        """Update JWKS URL after user_pool_id changes."""
+        """Update JWKS URL and cache after user_pool_id changes."""
         self.jwks_url = f"https://cognito-idp.{self.region}.amazonaws.com/{self.user_pool_id}/.well-known/jwks.json"
+        self._jwks_cache = JWKSCache(self.region, self.user_pool_id)
 
     def _compute_secret_hash(self, username: str) -> str:
         """Compute SECRET_HASH for Cognito API calls.
@@ -428,11 +432,14 @@ class CognitoAuth:
             LOGGER.error("Failed to create user: %s", str(e))
             raise
 
-    def verify_token(self, token: str) -> Dict[Any, Any]:
+    def verify_token(self, token: str, *, verify_signature: bool = True) -> Dict[Any, Any]:
         """Verify JWT token from Cognito.
 
         Args:
             token: JWT token string
+            verify_signature: If True (default), verify token signature
+                against Cognito JWKS. Set to False for testing or when
+                signature verification is not needed.
 
         Returns:
             Decoded token claims
@@ -441,19 +448,33 @@ class CognitoAuth:
             HTTPException if token is invalid
         """
         try:
-            # Decode without verification first to get header
-            jwt.get_unverified_header(token)
+            if verify_signature and self._jwks_cache is not None:
+                # JWKS-based signature verification
+                from .jwks import verify_token_with_jwks
 
-            # In production, fetch and cache JWKS keys
-            # For now, decode with basic validation
-            # Key is required by the API but not used when verify_signature=False
-            claims: Dict[Any, Any] = jwt.decode(
-                token,
-                key="",
-                options={"verify_signature": False},  # TODO: Implement proper JWKS verification
-            )
+                claims: Dict[Any, Any] = verify_token_with_jwks(
+                    token,
+                    self.region,
+                    self.user_pool_id,
+                    cache=self._jwks_cache,
+                )
+            elif verify_signature and self._jwks_cache is None:
+                # Cannot verify signature without JWKS cache
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Token signature verification requested but JWKS cache is not available. "
+                    "Ensure CognitoAuth is initialized with a valid user_pool_id.",
+                )
+            else:
+                # Explicitly opted out of signature verification
+                jwt.get_unverified_header(token)
+                claims = jwt.decode(
+                    token,
+                    key="",
+                    options={"verify_signature": False, "verify_exp": False},
+                )
 
-            # Verify token hasn't expired
+            # Verify token hasn't expired (manual check for consistent error msg)
             if "exp" in claims:
                 import time
 
@@ -472,6 +493,12 @@ class CognitoAuth:
 
             return claims
 
+        except (KeyError, RuntimeError) as e:
+            LOGGER.error("JWKS verification error: %s", str(e))
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token",
+            )
         except JWTError as e:
             LOGGER.error("JWT validation error: %s", str(e))
             raise HTTPException(

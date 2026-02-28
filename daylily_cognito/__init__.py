@@ -24,6 +24,7 @@ Example usage:
 from .auth import CognitoAuth
 from .cli import cognito_app, main
 from .config import CognitoConfig
+from .domain_validator import DomainValidator
 from .fastapi import create_auth_dependency, security
 from .google import (
     auto_create_cognito_user_from_google,
@@ -32,19 +33,22 @@ from .google import (
     fetch_google_userinfo,
     generate_state_token,
 )
+from .jwks import JWKSCache
 from .oauth import (
     build_authorization_url,
     build_logout_url,
     exchange_authorization_code,
     refresh_with_refresh_token,
 )
-from .tokens import decode_jwt_unverified, verify_jwt_claims_unverified_signature
+from .tokens import decode_jwt_unverified, verify_jwt_claims, verify_jwt_claims_unverified_signature
 
 __all__ = [
     # Config
     "CognitoConfig",
     # Auth
     "CognitoAuth",
+    # Domain validation
+    "DomainValidator",
     # FastAPI
     "create_auth_dependency",
     "security",
@@ -61,7 +65,10 @@ __all__ = [
     "generate_state_token",
     # Tokens
     "decode_jwt_unverified",
+    "verify_jwt_claims",
     "verify_jwt_claims_unverified_signature",
+    # JWKS
+    "JWKSCache",
     # CLI
     "cognito_app",
     "main",
