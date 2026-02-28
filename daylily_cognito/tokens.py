@@ -7,7 +7,10 @@ without signature verification (matching existing Ursa behavior).
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from daylily_cognito.jwks import JWKSCache
 
 from fastapi import HTTPException, status
 
@@ -164,7 +167,7 @@ def verify_jwt_claims(
             "Install with: pip install 'python-jose[cryptography]'"
         ) from e
 
-    from .jwks import JWKSCache, verify_token_with_jwks
+    from .jwks import verify_token_with_jwks
 
     try:
         claims = verify_token_with_jwks(
@@ -188,7 +191,7 @@ def verify_jwt_claims(
 
         return claims
 
-    except (KeyError, RuntimeError) as e:
+    except (KeyError, RuntimeError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication token",
