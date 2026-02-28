@@ -24,23 +24,12 @@ try:
     from jose import JWTError, jwt
 
     JOSE_AVAILABLE = True
-except (ImportError, SyntaxError) as e:
+except (ImportError, SyntaxError):
     # ImportError: python-jose not installed
     # SyntaxError: wrong 'jose' package installed (need python-jose)
     JOSE_AVAILABLE = False
     JWTError = Exception  # Fallback for type hints
-    LOGGER_IMPORT = logging.getLogger("daylily_cognito.auth")
-
-    if isinstance(e, SyntaxError):
-        LOGGER_IMPORT.warning(
-            "Incompatible 'jose' package found. Please uninstall it and install 'python-jose' instead. "
-            "Run: pip uninstall jose && pip install 'python-jose[cryptography]'"
-        )
-    else:
-        LOGGER_IMPORT.warning(
-            "python-jose not installed. Authentication features will be disabled. "
-            "Install with: pip install 'python-jose[cryptography]'"
-        )
+    # Avoid import-time warnings; raise explicit errors only when auth is used.
 
 LOGGER = logging.getLogger("daylily_cognito.auth")
 

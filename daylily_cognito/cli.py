@@ -7,6 +7,7 @@ Can be used standalone via `daycog` or integrated into other CLIs.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import typer
@@ -16,6 +17,7 @@ from rich.table import Table
 from .config import CognitoConfig
 
 cognito_app = typer.Typer(help="Cognito authentication management commands")
+config_app = typer.Typer(help="Manage persisted daycog CLI configuration")
 console = Console()
 
 # Global state for --config option (set by callback)
@@ -37,6 +39,168 @@ def _app_callback(
 
 
 cognito_app.callback()(_app_callback)
+cognito_app.add_typer(config_app, name="config")
+
+
+def _default_config_path() -> Path:
+    """Return the default daycog config file path."""
+    return Path.home() / ".config" / "daycog" / "default.env"
+
+
+def _pool_config_path(pool_name: str) -> Path:
+    """Return the per-pool config file path."""
+    return Path.home() / ".config" / "daycog" / f"{pool_name}.env"
+
+
+def _resolve_profile_region(profile: Optional[str], region: Optional[str]) -> tuple[str, str]:
+    """Resolve profile/region from flags or environment, erroring if missing."""
+    resolved_profile = profile or os.environ.get("AWS_PROFILE")
+    resolved_region = region or os.environ.get("AWS_REGION")
+
+    if not resolved_profile:
+        console.print("[red]✗[/red]  AWS profile not set")
+        console.print("   Pass [cyan]--profile[/cyan] or set [cyan]export AWS_PROFILE=your-profile[/cyan]")
+        raise typer.Exit(1)
+
+    if not resolved_region:
+        console.print("[red]✗[/red]  AWS region not set")
+        console.print("   Pass [cyan]--region[/cyan] or set [cyan]export AWS_REGION=us-west-2[/cyan]")
+        raise typer.Exit(1)
+
+    return resolved_profile, resolved_region
+
+
+def _get_pool_details_by_name(pool_name: str, profile: str, region: str) -> Dict[str, str]:
+    """Look up pool and a client ID by pool name."""
+    import boto3
+
+    session = boto3.Session(profile_name=profile, region_name=region)
+    cognito = session.client("cognito-idp")
+
+    pool_id = _find_pool_id_by_name(cognito, pool_name)
+    clients_resp = cognito.list_user_pool_clients(UserPoolId=pool_id, MaxResults=60)
+    clients = clients_resp.get("UserPoolClients", [])
+    client_id = clients[0]["ClientId"] if clients else ""
+
+    if len(clients) > 1:
+        console.print(
+            f"[yellow]⚠[/yellow]  Pool has {len(clients)} app clients; using first: {client_id}"
+        )
+
+    return {"pool_id": pool_id, "client_id": client_id}
+
+
+def _find_pool_id_by_name(cognito: Any, pool_name: str) -> str:
+    """Find a user pool ID by pool name using list pagination."""
+    paginator = cognito.get_paginator("list_user_pools")
+    matched_pool: Optional[Dict[str, str]] = None
+    for page in paginator.paginate(MaxResults=60):
+        for pool in page.get("UserPools", []):
+            if pool.get("Name") == pool_name:
+                matched_pool = pool
+                break
+        if matched_pool:
+            break
+
+    if not matched_pool:
+        console.print(f"[red]✗[/red]  Pool not found: {pool_name}")
+        raise typer.Exit(1)
+
+    return matched_pool["Id"]
+
+
+def _read_env_file(path: Path) -> Dict[str, str]:
+    """Read simple KEY=VALUE lines from a config file."""
+    values: Dict[str, str] = {}
+    if not path.exists():
+        return values
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if key:
+            values[key] = value
+    return values
+
+
+def _write_env_file(path: Path, values: Dict[str, str]) -> None:
+    """Write env config values to disk in stable key order."""
+    lines = _render_env_lines(values)
+    contents = "\n".join(lines) + ("\n" if lines else "")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(contents, encoding="utf-8")
+
+
+def _render_env_lines(values: Dict[str, str]) -> List[str]:
+    """Render key/value env settings as stable KEY=VALUE lines."""
+    keys = [
+        "AWS_PROFILE",
+        "AWS_REGION",
+        "COGNITO_REGION",
+        "COGNITO_USER_POOL_ID",
+        "COGNITO_APP_CLIENT_ID",
+        "COGNITO_CALLBACK_URL",
+        "GOOGLE_CLIENT_ID",
+        "GOOGLE_CLIENT_SECRET",
+        "COGNITO_DOMAIN",
+    ]
+    lines: List[str] = []
+    for key in keys:
+        value = values.get(key)
+        if value:
+            lines.append(f"{key}={value}")
+    return lines
+
+
+def _collect_known_cli_values() -> Dict[str, str]:
+    """Collect values currently known to the CLI from config/env context."""
+    values: Dict[str, str] = {}
+
+    if _config_name:
+        try:
+            cfg = CognitoConfig.from_env(_config_name)
+            values["COGNITO_REGION"] = cfg.region
+            values["COGNITO_USER_POOL_ID"] = cfg.user_pool_id
+            values["COGNITO_APP_CLIENT_ID"] = cfg.app_client_id
+            if cfg.aws_profile:
+                values["AWS_PROFILE"] = cfg.aws_profile
+            if cfg.google_client_id:
+                values["GOOGLE_CLIENT_ID"] = cfg.google_client_id
+            if cfg.google_client_secret:
+                values["GOOGLE_CLIENT_SECRET"] = cfg.google_client_secret
+            if cfg.cognito_domain:
+                values["COGNITO_DOMAIN"] = cfg.cognito_domain
+        except ValueError:
+            pass
+
+    env = os.environ
+    if env.get("AWS_PROFILE"):
+        values["AWS_PROFILE"] = env["AWS_PROFILE"]
+    if env.get("AWS_REGION"):
+        values["AWS_REGION"] = env["AWS_REGION"]
+    if env.get("COGNITO_REGION"):
+        values["COGNITO_REGION"] = env["COGNITO_REGION"]
+    if env.get("COGNITO_USER_POOL_ID"):
+        values["COGNITO_USER_POOL_ID"] = env["COGNITO_USER_POOL_ID"]
+    if env.get("COGNITO_CALLBACK_URL"):
+        values["COGNITO_CALLBACK_URL"] = env["COGNITO_CALLBACK_URL"]
+
+    app_client_id = env.get("COGNITO_APP_CLIENT_ID") or env.get("COGNITO_CLIENT_ID")
+    if app_client_id:
+        values["COGNITO_APP_CLIENT_ID"] = app_client_id
+
+    if env.get("GOOGLE_CLIENT_ID"):
+        values["GOOGLE_CLIENT_ID"] = env["GOOGLE_CLIENT_ID"]
+    if env.get("GOOGLE_CLIENT_SECRET"):
+        values["GOOGLE_CLIENT_SECRET"] = env["GOOGLE_CLIENT_SECRET"]
+    if env.get("COGNITO_DOMAIN"):
+        values["COGNITO_DOMAIN"] = env["COGNITO_DOMAIN"]
+
+    return values
 
 
 def _check_aws_profile() -> None:
@@ -149,20 +313,14 @@ def setup(
         "--region",
         help="AWS region to use (defaults to AWS_REGION env var)",
     ),
+    print_exports: bool = typer.Option(
+        False,
+        "--print-exports",
+        help="Print export commands so callers can eval them in the parent shell",
+    ),
 ):
     """Create Cognito User Pool and App Client."""
-    resolved_profile = profile or os.environ.get("AWS_PROFILE")
-    resolved_region = region or os.environ.get("AWS_REGION")
-
-    if not resolved_profile:
-        console.print("[red]✗[/red]  AWS profile not set")
-        console.print("   Pass [cyan]--profile[/cyan] or set [cyan]export AWS_PROFILE=your-profile[/cyan]")
-        raise typer.Exit(1)
-
-    if not resolved_region:
-        console.print("[red]✗[/red]  AWS region not set")
-        console.print("   Pass [cyan]--region[/cyan] or set [cyan]export AWS_REGION=us-west-2[/cyan]")
-        raise typer.Exit(1)
+    resolved_profile, resolved_region = _resolve_profile_region(profile, region)
 
     # Ensure boto3 and any downstream helpers see explicit values from flags.
     os.environ["AWS_PROFILE"] = resolved_profile
@@ -224,11 +382,207 @@ def setup(
         console.print(f"[green]✓[/green]  Created app client: {client_id}")
 
         # Show configuration
+        setup_values = {
+            "AWS_PROFILE": resolved_profile,
+            "AWS_REGION": resolved_region,
+            "COGNITO_REGION": resolved_region,
+            "COGNITO_USER_POOL_ID": pool_id,
+            "COGNITO_APP_CLIENT_ID": client_id,
+            "COGNITO_CALLBACK_URL": callback_url,
+        }
+        pool_config_path = _pool_config_path(pool_name)
+        default_config_path = _default_config_path()
+
+        pool_file_values = _read_env_file(pool_config_path)
+        pool_file_values.update(setup_values)
+        _write_env_file(pool_config_path, pool_file_values)
+
+        default_file_values = _read_env_file(default_config_path)
+        default_file_values.update(setup_values)
+        _write_env_file(default_config_path, default_file_values)
+
         console.print("\n[green]✓[/green]  Cognito setup complete")
-        console.print("\nAdd to your .env file:")
+        console.print("\nSaved config files:")
+        console.print(f"   [cyan]{pool_config_path}[/cyan]")
+        console.print(f"   [cyan]{default_config_path}[/cyan] [dim](default)[/dim]")
+        console.print("\nValues written to default config:")
         console.print(f"   [cyan]COGNITO_USER_POOL_ID={pool_id}[/cyan]")
         console.print(f"   [cyan]COGNITO_APP_CLIENT_ID={client_id}[/cyan]")
+        console.print(f"   [cyan]COGNITO_CALLBACK_URL={callback_url}[/cyan]")
+        if print_exports:
+            console.print("\n[bold]Shell exports:[/bold]")
+            console.print(f'export AWS_PROFILE="{resolved_profile}"')
+            console.print(f'export AWS_REGION="{resolved_region}"')
+            console.print(f'export COGNITO_REGION="{resolved_region}"')
+            console.print(f'export COGNITO_USER_POOL_ID="{pool_id}"')
+            console.print(f'export COGNITO_APP_CLIENT_ID="{client_id}"')
+            console.print(f'export COGNITO_CALLBACK_URL="{callback_url}"')
 
+    except Exception as e:
+        console.print(f"[red]✗[/red]  Error: {e}")
+        raise typer.Exit(1)
+
+
+@config_app.command("print")
+def config_print(
+    pool_name: Optional[str] = typer.Option(
+        None, "--pool-name", "--poor-name", help="Pool name for per-pool config file"
+    ),
+) -> None:
+    """Print config file path and file contents."""
+    config_path = _pool_config_path(pool_name) if pool_name else _default_config_path()
+    console.print(str(config_path))
+    if config_path.exists():
+        contents = config_path.read_text(encoding="utf-8")
+        if contents:
+            console.print(contents, end="")
+
+
+@config_app.command("create")
+def config_create(
+    pool_name: str = typer.Option(..., "--pool-name", "--poor-name", help="Pool name to resolve and write config for"),
+    profile: Optional[str] = typer.Option(None, "--profile", help="AWS profile to use"),
+    region: Optional[str] = typer.Option(None, "--region", help="AWS region to use"),
+) -> None:
+    """Create the pool config file and update default config from AWS."""
+    resolved_profile, resolved_region = _resolve_profile_region(profile, region)
+    pool_details = _get_pool_details_by_name(pool_name, resolved_profile, resolved_region)
+
+    config_values = {
+        "AWS_PROFILE": resolved_profile,
+        "AWS_REGION": resolved_region,
+        "COGNITO_REGION": resolved_region,
+        "COGNITO_USER_POOL_ID": pool_details["pool_id"],
+    }
+    if pool_details["client_id"]:
+        config_values["COGNITO_APP_CLIENT_ID"] = pool_details["client_id"]
+
+    config_path = _pool_config_path(pool_name)
+    if config_path.exists():
+        console.print(f"[red]✗[/red]  Config file already exists: {config_path}")
+        raise typer.Exit(1)
+    _write_env_file(config_path, config_values)
+
+    default_path = _default_config_path()
+    merged_default = _read_env_file(default_path)
+    merged_default.update(config_values)
+    _write_env_file(default_path, merged_default)
+
+    console.print(str(config_path))
+    console.print(config_path.read_text(encoding="utf-8"), end="")
+    console.print(str(default_path))
+    console.print(default_path.read_text(encoding="utf-8"), end="")
+
+
+@config_app.command("update")
+def config_update(
+    pool_name: str = typer.Option(..., "--pool-name", "--poor-name", help="Pool name to resolve and write config for"),
+    profile: Optional[str] = typer.Option(None, "--profile", help="AWS profile to use"),
+    region: Optional[str] = typer.Option(None, "--region", help="AWS region to use"),
+) -> None:
+    """Update the pool config file and default config from AWS."""
+    resolved_profile, resolved_region = _resolve_profile_region(profile, region)
+    pool_details = _get_pool_details_by_name(pool_name, resolved_profile, resolved_region)
+
+    config_values = {
+        "AWS_PROFILE": resolved_profile,
+        "AWS_REGION": resolved_region,
+        "COGNITO_REGION": resolved_region,
+        "COGNITO_USER_POOL_ID": pool_details["pool_id"],
+    }
+    if pool_details["client_id"]:
+        config_values["COGNITO_APP_CLIENT_ID"] = pool_details["client_id"]
+
+    pool_path = _pool_config_path(pool_name)
+    merged_pool = _read_env_file(pool_path)
+    merged_pool.update(config_values)
+    _write_env_file(pool_path, merged_pool)
+
+    default_path = _default_config_path()
+    merged_default = _read_env_file(default_path)
+    merged_default.update(config_values)
+    _write_env_file(default_path, merged_default)
+
+    console.print(str(pool_path))
+    console.print(pool_path.read_text(encoding="utf-8"), end="")
+    console.print(str(default_path))
+    console.print(default_path.read_text(encoding="utf-8"), end="")
+
+
+@cognito_app.command("list-pools")
+def list_pools(
+    profile: Optional[str] = typer.Option(None, "--profile", help="AWS profile to use"),
+    region: Optional[str] = typer.Option(None, "--region", help="AWS region to use"),
+) -> None:
+    """List Cognito user pools in a region."""
+    resolved_profile, resolved_region = _resolve_profile_region(profile, region)
+
+    try:
+        import boto3
+
+        session = boto3.Session(profile_name=resolved_profile, region_name=resolved_region)
+        cognito = session.client("cognito-idp")
+
+        table = Table(title=f"Cognito User Pools ({resolved_region})")
+        table.add_column("Pool Name", style="cyan")
+        table.add_column("Pool ID")
+
+        paginator = cognito.get_paginator("list_user_pools")
+        count = 0
+        for page in paginator.paginate(MaxResults=60):
+            for pool in page.get("UserPools", []):
+                table.add_row(pool.get("Name", ""), pool.get("Id", ""))
+                count += 1
+
+        console.print(table)
+        console.print(f"\n[dim]Total: {count} pools[/dim]")
+    except Exception as e:
+        console.print(f"[red]✗[/red]  Error: {e}")
+        raise typer.Exit(1)
+
+
+@cognito_app.command("delete-pool")
+def delete_pool(
+    pool_name: Optional[str] = typer.Option(None, "--pool-name", help="Cognito pool name to delete"),
+    pool_id: Optional[str] = typer.Option(None, "--pool-id", help="Cognito pool ID to delete"),
+    profile: Optional[str] = typer.Option(None, "--profile", help="AWS profile to use"),
+    region: Optional[str] = typer.Option(None, "--region", help="AWS region to use"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
+) -> None:
+    """Delete a Cognito user pool by name or ID."""
+    if not pool_name and not pool_id:
+        console.print("[red]✗[/red]  Provide one of: [cyan]--pool-name[/cyan] or [cyan]--pool-id[/cyan]")
+        raise typer.Exit(1)
+
+    resolved_profile, resolved_region = _resolve_profile_region(profile, region)
+
+    try:
+        import boto3
+
+        session = boto3.Session(profile_name=resolved_profile, region_name=resolved_region)
+        cognito = session.client("cognito-idp")
+
+        resolved_pool_id = pool_id
+        resolved_pool_name = pool_name
+        if not resolved_pool_id and pool_name:
+            resolved_pool_id = _find_pool_id_by_name(cognito, pool_name)
+
+        if resolved_pool_id and not resolved_pool_name:
+            pool_info = cognito.describe_user_pool(UserPoolId=resolved_pool_id)
+            resolved_pool_name = pool_info["UserPool"]["Name"]
+
+        if not force:
+            console.print("[red]⚠  WARNING: This will delete the Cognito pool:[/red]")
+            console.print(f"   Pool Name: {resolved_pool_name}")
+            console.print(f"   Pool ID: {resolved_pool_id}")
+            console.print("   [red]All users will be permanently deleted![/red]")
+            confirm = typer.confirm("Are you absolutely sure?")
+            if not confirm:
+                console.print("[dim]Cancelled[/dim]")
+                return
+
+        cognito.delete_user_pool(UserPoolId=resolved_pool_id)
+        console.print(f"[green]✓[/green]  Deleted Cognito pool: {resolved_pool_name} ({resolved_pool_id})")
     except Exception as e:
         console.print(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)

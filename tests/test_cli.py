@@ -69,17 +69,24 @@ class TestStatusCommand:
 class TestSetupCommand:
     @mock.patch.dict(os.environ, _BASE_ENV, clear=False)
     @mock.patch("boto3.client")
-    def test_setup_creates_pool_and_client(self, mock_boto_client: mock.MagicMock) -> None:
+    def test_setup_creates_pool_and_client(self, mock_boto_client: mock.MagicMock, tmp_path) -> None:
         mc = _mock_cognito_client()
         mock_boto_client.return_value = mc
-        result = runner.invoke(cognito_app, ["setup", "--name", "my-pool"])
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            result = runner.invoke(cognito_app, ["setup", "--name", "my-pool"])
         assert result.exit_code == 0
         assert "new-cid" in result.output
         assert "Profile: test-profile" in result.output
         assert "Region: us-west-2" in result.output
+        normalized = result.output.replace("\n", "")
+        assert str(tmp_path / ".config" / "daycog" / "default.env") in normalized
         mock_boto_client.assert_called_once_with("cognito-idp", region_name="us-west-2")
         mc.create_user_pool.assert_called_once()
         mc.create_user_pool_client.assert_called_once()
+        assert (tmp_path / ".config" / "daycog" / "my-pool.env").exists()
+        assert (tmp_path / ".config" / "daycog" / "default.env").exists()
+        content = (tmp_path / ".config" / "daycog" / "default.env").read_text(encoding="utf-8")
+        assert "COGNITO_CALLBACK_URL=http://localhost:8001/auth/callback" in content
 
     @mock.patch.dict(
         os.environ,
@@ -96,19 +103,225 @@ class TestSetupCommand:
 
     @mock.patch.dict(os.environ, _BASE_ENV, clear=False)
     @mock.patch("boto3.client")
-    def test_setup_flags_override_env_and_set_process_env(self, mock_boto_client: mock.MagicMock) -> None:
+    def test_setup_flags_override_env_and_set_process_env(self, mock_boto_client: mock.MagicMock, tmp_path) -> None:
         mc = _mock_cognito_client()
         mock_boto_client.return_value = mc
-        result = runner.invoke(
-            cognito_app,
-            ["setup", "--name", "my-pool", "--profile", "flag-profile", "--region", "us-east-1"],
-        )
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            result = runner.invoke(
+                cognito_app,
+                ["setup", "--name", "my-pool", "--profile", "flag-profile", "--region", "us-east-1"],
+            )
         assert result.exit_code == 0
         assert "Profile: flag-profile" in result.output
         assert "Region: us-east-1" in result.output
         mock_boto_client.assert_called_once_with("cognito-idp", region_name="us-east-1")
         assert os.environ["AWS_PROFILE"] == "flag-profile"
         assert os.environ["AWS_REGION"] == "us-east-1"
+
+    @mock.patch.dict(os.environ, _BASE_ENV, clear=False)
+    @mock.patch("boto3.client")
+    def test_setup_print_exports_outputs_shell_exports(self, mock_boto_client: mock.MagicMock, tmp_path) -> None:
+        mc = _mock_cognito_client()
+        mock_boto_client.return_value = mc
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            result = runner.invoke(
+                cognito_app,
+                ["setup", "--name", "my-pool", "--profile", "flag-profile", "--region", "us-east-1", "--print-exports"],
+            )
+        assert result.exit_code == 0
+        assert 'export AWS_PROFILE="flag-profile"' in result.output
+        assert 'export AWS_REGION="us-east-1"' in result.output
+        assert 'export COGNITO_REGION="us-east-1"' in result.output
+        assert 'export COGNITO_USER_POOL_ID="us-west-2_New"' in result.output
+        assert 'export COGNITO_APP_CLIENT_ID="new-cid"' in result.output
+        assert 'export COGNITO_CALLBACK_URL="http://localhost:8001/auth/callback"' in result.output
+
+
+# ---------------------------------------------------------------------------
+# config
+# ---------------------------------------------------------------------------
+
+
+class TestConfigCommand:
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_config_print_shows_default_path(self, tmp_path) -> None:
+        cfg_path = tmp_path / ".config" / "daycog" / "default.env"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text("AWS_PROFILE=from-file\n", encoding="utf-8")
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            result = runner.invoke(cognito_app, ["config", "print"])
+        assert result.exit_code == 0
+        normalized = result.output.replace("\n", "")
+        assert str(tmp_path / ".config" / "daycog" / "default.env") in normalized
+        assert "AWS_PROFILE=from-file" in result.output
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_config_print_accepts_pool_name(self, tmp_path) -> None:
+        cfg_path = tmp_path / ".config" / "daycog" / "my-pool.env"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text("COGNITO_USER_POOL_ID=pool_id\n", encoding="utf-8")
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            result = runner.invoke(cognito_app, ["config", "print", "--pool-name", "my-pool"])
+        assert result.exit_code == 0
+        assert "COGNITO_USER_POOL_ID=pool_id" in result.output
+
+    @mock.patch.dict(
+        os.environ,
+        {
+            "AWS_PROFILE": "dev-prof",
+            "AWS_REGION": "us-east-1",
+        },
+        clear=True,
+    )
+    @mock.patch("boto3.Session")
+    def test_config_create_writes_and_prints_contents(self, mock_session_cls: mock.MagicMock, tmp_path) -> None:
+        cfg_path = tmp_path / ".config" / "daycog" / "my-pool.env"
+        default_path = tmp_path / ".config" / "daycog" / "default.env"
+        mc = _mock_cognito_client()
+        mock_paginator = mock.MagicMock()
+        mock_paginator.paginate.return_value = [{"UserPools": [{"Name": "my-pool", "Id": "us-east-1_pool"}]}]
+        mc.get_paginator.return_value = mock_paginator
+        mc.list_user_pool_clients.return_value = {"UserPoolClients": [{"ClientId": "client_123"}]}
+        mock_session = mock.MagicMock()
+        mock_session.client.return_value = mc
+        mock_session_cls.return_value = mock_session
+
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            result = runner.invoke(cognito_app, ["config", "create", "--pool-name", "my-pool"])
+
+        assert result.exit_code == 0
+        normalized = result.output.replace("\n", "")
+        assert str(cfg_path) in normalized
+        assert str(default_path) in normalized
+        assert "AWS_PROFILE=dev-prof" in result.output
+        assert "AWS_REGION=us-east-1" in result.output
+        assert "COGNITO_USER_POOL_ID=us-east-1_pool" in result.output
+        assert "COGNITO_APP_CLIENT_ID=client_123" in result.output
+        assert cfg_path.exists()
+        assert default_path.exists()
+        mock_session_cls.assert_called_once_with(profile_name="dev-prof", region_name="us-east-1")
+
+    @mock.patch.dict(
+        os.environ,
+        {
+            "AWS_PROFILE": "new-prof",
+            "AWS_REGION": "us-west-2",
+        },
+        clear=True,
+    )
+    @mock.patch("boto3.Session")
+    def test_config_update_merges_existing_and_known_values(
+        self, mock_session_cls: mock.MagicMock, tmp_path
+    ) -> None:
+        pool_path = tmp_path / ".config" / "daycog" / "my-pool.env"
+        default_path = tmp_path / ".config" / "daycog" / "default.env"
+        pool_path.parent.mkdir(parents=True, exist_ok=True)
+        pool_path.write_text("GOOGLE_CLIENT_ID=keepme\n", encoding="utf-8")
+        default_path.write_text("COGNITO_DOMAIN=example-domain\n", encoding="utf-8")
+
+        mc = _mock_cognito_client()
+        mock_paginator = mock.MagicMock()
+        mock_paginator.paginate.return_value = [{"UserPools": [{"Name": "my-pool", "Id": "us-west-2_pool"}]}]
+        mc.get_paginator.return_value = mock_paginator
+        mc.list_user_pool_clients.return_value = {"UserPoolClients": [{"ClientId": "updated-client"}]}
+        mock_session = mock.MagicMock()
+        mock_session.client.return_value = mc
+        mock_session_cls.return_value = mock_session
+
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            result = runner.invoke(cognito_app, ["config", "update", "--pool-name", "my-pool"])
+
+        assert result.exit_code == 0
+        pool_content = pool_path.read_text(encoding="utf-8")
+        default_content = default_path.read_text(encoding="utf-8")
+        assert "COGNITO_USER_POOL_ID=us-west-2_pool" in pool_content
+        assert "COGNITO_APP_CLIENT_ID=updated-client" in pool_content
+        assert "AWS_PROFILE=new-prof" in pool_content
+        assert "AWS_REGION=us-west-2" in pool_content
+        assert "GOOGLE_CLIENT_ID=keepme" in pool_content
+        assert "COGNITO_DOMAIN=example-domain" in default_content
+        assert "COGNITO_USER_POOL_ID=us-west-2_pool" in default_content
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_config_create_requires_pool_name(self) -> None:
+        result = runner.invoke(cognito_app, ["config", "create"])
+        assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# list-pools
+# ---------------------------------------------------------------------------
+
+
+class TestListPoolsCommand:
+    @mock.patch.dict(os.environ, {"AWS_PROFILE": "p", "AWS_REGION": "us-east-1"}, clear=True)
+    @mock.patch("boto3.Session")
+    def test_list_pools_lists_pools_for_region(self, mock_session_cls: mock.MagicMock) -> None:
+        mc = _mock_cognito_client()
+        mock_paginator = mock.MagicMock()
+        mock_paginator.paginate.return_value = [
+            {"UserPools": [{"Name": "pool-a", "Id": "us-east-1_A"}, {"Name": "pool-b", "Id": "us-east-1_B"}]}
+        ]
+        mc.get_paginator.return_value = mock_paginator
+        mock_session = mock.MagicMock()
+        mock_session.client.return_value = mc
+        mock_session_cls.return_value = mock_session
+
+        result = runner.invoke(cognito_app, ["list-pools"])
+        assert result.exit_code == 0
+        assert "pool-a" in result.output
+        assert "pool-b" in result.output
+        assert "Total: 2 pools" in result.output
+        mock_session_cls.assert_called_once_with(profile_name="p", region_name="us-east-1")
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_list_pools_requires_profile_and_region(self) -> None:
+        result = runner.invoke(cognito_app, ["list-pools"])
+        assert result.exit_code == 1
+        assert "AWS profile not set" in result.output
+
+
+# ---------------------------------------------------------------------------
+# delete-pool
+# ---------------------------------------------------------------------------
+
+
+class TestDeletePoolCommand:
+    @mock.patch.dict(os.environ, {"AWS_PROFILE": "p", "AWS_REGION": "us-east-1"}, clear=True)
+    @mock.patch("boto3.Session")
+    def test_delete_pool_by_name_with_force(self, mock_session_cls: mock.MagicMock) -> None:
+        mc = _mock_cognito_client()
+        mock_paginator = mock.MagicMock()
+        mock_paginator.paginate.return_value = [{"UserPools": [{"Name": "pool-a", "Id": "us-east-1_A"}]}]
+        mc.get_paginator.return_value = mock_paginator
+        mock_session = mock.MagicMock()
+        mock_session.client.return_value = mc
+        mock_session_cls.return_value = mock_session
+
+        result = runner.invoke(cognito_app, ["delete-pool", "--pool-name", "pool-a", "--force"])
+        assert result.exit_code == 0
+        mc.delete_user_pool.assert_called_once_with(UserPoolId="us-east-1_A")
+        assert "Deleted Cognito pool: pool-a (us-east-1_A)" in result.output
+
+    @mock.patch.dict(os.environ, {"AWS_PROFILE": "p", "AWS_REGION": "us-east-1"}, clear=True)
+    @mock.patch("boto3.Session")
+    def test_delete_pool_by_id_with_force(self, mock_session_cls: mock.MagicMock) -> None:
+        mc = _mock_cognito_client()
+        mc.describe_user_pool.return_value = {"UserPool": {"Name": "pool-b"}}
+        mock_session = mock.MagicMock()
+        mock_session.client.return_value = mc
+        mock_session_cls.return_value = mock_session
+
+        result = runner.invoke(cognito_app, ["delete-pool", "--pool-id", "us-east-1_B", "--force"])
+        assert result.exit_code == 0
+        mc.delete_user_pool.assert_called_once_with(UserPoolId="us-east-1_B")
+        assert "Deleted Cognito pool: pool-b (us-east-1_B)" in result.output
+
+    @mock.patch.dict(os.environ, {"AWS_PROFILE": "p", "AWS_REGION": "us-east-1"}, clear=True)
+    def test_delete_pool_requires_name_or_id(self) -> None:
+        result = runner.invoke(cognito_app, ["delete-pool", "--force"])
+        assert result.exit_code == 1
+        assert "Provide one of" in result.output
 
 
 # ---------------------------------------------------------------------------

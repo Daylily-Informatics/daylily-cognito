@@ -73,6 +73,51 @@ fi
 
 echo "daycog is ready: $(command -v daycog)"
 
+if [ "${DAYCOG_INSTALL_COMPLETION:-1}" = "1" ]; then
+  echo "Installing shell completion (set DAYCOG_INSTALL_COMPLETION=0 to skip)..."
+  if ! daycog --install-completion >/dev/null 2>&1; then
+    echo "Warning: unable to install completion automatically." >&2
+  fi
+fi
+
+# If a default config exists, load it into the current shell environment.
+if [ -f "$HOME/.config/daycog/default.env" ]; then
+  # shellcheck disable=SC1090
+  set -a
+  . "$HOME/.config/daycog/default.env"
+  set +a
+fi
+
+# Wrap daycog so `daycog setup` can update the caller shell environment.
+daycog() {
+  if [ "$1" = "setup" ]; then
+    _DAYCOG_SETUP_OUT="$(command daycog "$@" --print-exports)"
+    _DAYCOG_SETUP_RC=$?
+    printf "%s\n" "$_DAYCOG_SETUP_OUT"
+    if [ "$_DAYCOG_SETUP_RC" -eq 0 ]; then
+      _DAYCOG_EXPORTS="$(printf "%s\n" "$_DAYCOG_SETUP_OUT" | sed -n '/^export /p')"
+      if [ -n "$_DAYCOG_EXPORTS" ]; then
+        eval "$_DAYCOG_EXPORTS"
+      fi
+      if [ -f "$HOME/.config/daycog/default.env" ]; then
+        # shellcheck disable=SC1090
+        set -a
+        . "$HOME/.config/daycog/default.env"
+        set +a
+      fi
+    fi
+    _DAYCOG_RETURN_RC=$_DAYCOG_SETUP_RC
+    _DAYCOG_FINAL_RC=$_DAYCOG_RETURN_RC
+    unset _DAYCOG_EXPORTS
+    unset _DAYCOG_RETURN_RC
+    unset _DAYCOG_SETUP_OUT
+    unset _DAYCOG_SETUP_RC
+    return "$_DAYCOG_FINAL_RC"
+  fi
+
+  command daycog "$@"
+}
+
 unset _DAYCOG_ACTIVATE_DIR
 unset _DAYCOG_SOURCE
 unset _DAYCOG_SOURCED
