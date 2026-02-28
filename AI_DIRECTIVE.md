@@ -35,6 +35,7 @@ daycog list-apps --pool-name <pool-name> --profile <profile> --region <region>
 daycog add-app --pool-name <pool-name> --app-name <app-name> --callback-url <url> --profile <profile> --region <region>
 daycog edit-app --pool-name <pool-name> --app-name <app-name> --profile <profile> --region <region>
 daycog remove-app --pool-name <pool-name> --app-name <app-name> --profile <profile> --region <region> --force
+daycog add-google-idp --pool-name <pool-name> --app-name <app-name> --profile <profile> --region <region>
 daycog delete-pool --pool-name <pool-name> --profile <profile> --region <region> --force
 ```
 
@@ -91,6 +92,8 @@ Multi-app guidance:
 - Pool file (`<pool>.<region>.env`) stores the selected app context for that pool/region.
 - `default.env` stores active global context.
 - Use `--set-default` on `add-app`/`edit-app` when the new app should become active in pool/default env files.
+- For Google federation, use `add-google-idp` with `--google-client-json` or credential flags/env vars.
+- Do not assume Google client secret can be fetched from Google automatically; use provided JSON or env credentials.
 
 ## Guardrails for Agents
 - Prefer `daycog` over ad-hoc boto3 scripts for operational actions.

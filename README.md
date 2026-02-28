@@ -160,6 +160,11 @@ daycog edit-app --pool-name my-pool --app-name web-app \
 daycog remove-app --pool-name my-pool --app-name web-app-v2 \
   --profile my-aws-profile --region us-east-1 --force
 
+# Configure Google IdP for a pool/app from downloaded Google OAuth JSON
+daycog add-google-idp --pool-name my-pool --app-name web-app \
+  --google-client-json ./client_secret.json \
+  --profile my-aws-profile --region us-east-1
+
 # Delete one pool by name or ID
 daycog delete-pool --pool-name my-pool --profile my-aws-profile --region us-east-1 --force
 daycog delete-pool --pool-id us-east-1_abc123 --profile my-aws-profile --region us-east-1 --force
@@ -360,6 +365,20 @@ Or use the CLI helper:
 ```bash
 daycog setup-google --client-id YOUR_ID --client-secret YOUR_SECRET
 ```
+
+Or configure Cognito Google federation directly:
+
+```bash
+daycog add-google-idp --pool-name my-pool --app-name web-app \
+  --google-client-json ./client_secret.json \
+  --profile my-aws-profile --region us-east-1
+```
+
+`add-google-idp` resolves Google credentials in this order:
+1. `--google-client-id` + `--google-client-secret`
+2. `--google-client-json` (`web` or `installed` keys)
+3. `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET`
+4. `DAYCOG_<NAME>_GOOGLE_CLIENT_ID` + `DAYCOG_<NAME>_GOOGLE_CLIENT_SECRET` (when `--config NAME` is used)
 
 ### Usage
 
