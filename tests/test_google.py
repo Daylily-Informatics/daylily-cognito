@@ -1,6 +1,7 @@
 """Tests for Google OAuth integration (daylily_cognito.google)."""
 
 import json
+import socket
 from typing import Any, Dict
 from unittest import mock
 from urllib.parse import parse_qs, urlparse
@@ -165,6 +166,18 @@ class TestExchangeGoogleCodeForTokens:
         assert GOOGLE_TOKEN_ENDPOINT in call_args.full_url
 
     @mock.patch("daylily_cognito.google.urllib.request.urlopen")
+    def test_exchange_timeout(self, mock_urlopen: mock.MagicMock) -> None:
+        mock_urlopen.side_effect = socket.timeout("timed out")
+
+        with pytest.raises(RuntimeError, match="timed out"):
+            exchange_google_code_for_tokens(
+                client_id="cid",
+                client_secret="csecret",
+                code="auth-code",
+                redirect_uri="http://localhost/cb",
+            )
+
+    @mock.patch("daylily_cognito.google.urllib.request.urlopen")
     def test_exchange_failure(self, mock_urlopen: mock.MagicMock) -> None:
         import urllib.error
 
@@ -212,6 +225,13 @@ class TestFetchGoogleUserinfo:
         # Verify authorization header
         call_args = mock_urlopen.call_args[0][0]
         assert call_args.get_header("Authorization") == "Bearer ya29.abc"
+
+    @mock.patch("daylily_cognito.google.urllib.request.urlopen")
+    def test_fetch_timeout(self, mock_urlopen: mock.MagicMock) -> None:
+        mock_urlopen.side_effect = socket.timeout("timed out")
+
+        with pytest.raises(RuntimeError, match="timed out"):
+            fetch_google_userinfo("ya29.abc")
 
     @mock.patch("daylily_cognito.google.urllib.request.urlopen")
     def test_fetch_failure(self, mock_urlopen: mock.MagicMock) -> None:

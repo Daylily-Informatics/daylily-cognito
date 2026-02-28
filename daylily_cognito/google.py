@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import secrets
+import socket
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, Optional
@@ -133,9 +134,11 @@ def exchange_google_code_for_tokens(
     )
 
     try:
-        with urllib.request.urlopen(request) as response:
+        with urllib.request.urlopen(request, timeout=10) as response:
             body = response.read().decode("utf-8")
             return json.loads(body)
+    except socket.timeout as e:
+        raise RuntimeError("Google token exchange timed out") from e
     except urllib.error.HTTPError as e:
         error_body = e.read().decode("utf-8") if e.fp else ""
         raise RuntimeError(f"Google token exchange failed: HTTP {e.code} - {error_body}") from e
@@ -171,9 +174,11 @@ def fetch_google_userinfo(access_token: str) -> Dict[str, Any]:
     )
 
     try:
-        with urllib.request.urlopen(request) as response:
+        with urllib.request.urlopen(request, timeout=10) as response:
             body = response.read().decode("utf-8")
             return json.loads(body)
+    except socket.timeout as e:
+        raise RuntimeError("Google userinfo fetch timed out") from e
     except urllib.error.HTTPError as e:
         error_body = e.read().decode("utf-8") if e.fp else ""
         raise RuntimeError(f"Google userinfo request failed: HTTP {e.code} - {error_body}") from e
