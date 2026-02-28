@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import os
 import re
+import time
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -125,6 +127,45 @@ def _resolve_mfa_configuration(mfa: str) -> str:
         console.print("[red]✗[/red]  Invalid --mfa value. Use one of: off, optional, required")
         raise typer.Exit(1)
     return mapping[normalized]
+
+
+def _resolve_google_client_details(
+    *,
+    google_client_id: Optional[str],
+    google_client_secret: Optional[str],
+    google_client_json: Optional[str],
+) -> tuple[str, str]:
+    """Resolve Google OAuth client credentials from flags/json/env."""
+    resolved_id = google_client_id
+    resolved_secret = google_client_secret
+
+    if google_client_json and (not resolved_id or not resolved_secret):
+        try:
+            payload = json.loads(Path(google_client_json).read_text(encoding="utf-8"))
+            node = payload.get("web") or payload.get("installed") or {}
+            resolved_id = resolved_id or node.get("client_id")
+            resolved_secret = resolved_secret or node.get("client_secret")
+        except Exception as e:
+            console.print(f"[red]✗[/red]  Failed to read Google client JSON: {e}")
+            raise typer.Exit(1)
+
+    resolved_id = resolved_id or os.environ.get("GOOGLE_CLIENT_ID")
+    resolved_secret = resolved_secret or os.environ.get("GOOGLE_CLIENT_SECRET")
+
+    if _config_name:
+        name_upper = _config_name.upper()
+        resolved_id = resolved_id or os.environ.get(f"DAYCOG_{name_upper}_GOOGLE_CLIENT_ID")
+        resolved_secret = resolved_secret or os.environ.get(f"DAYCOG_{name_upper}_GOOGLE_CLIENT_SECRET")
+
+    if not resolved_id or not resolved_secret:
+        console.print("[red]✗[/red]  Google OAuth client details missing")
+        console.print(
+            "   Provide --google-client-id/--google-client-secret, or --google-client-json, "
+            "or set GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET"
+        )
+        raise typer.Exit(1)
+
+    return resolved_id, resolved_secret
 
 
 def _get_pool_details_by_name(pool_name: str, profile: str, region: str) -> Dict[str, str]:
@@ -938,6 +979,105 @@ def remove_app(
         raise typer.Exit(1)
 
 
+@cognito_app.command("add-google-idp")
+def add_google_idp(
+    pool_name: str = typer.Option(..., "--pool-name", help="Cognito pool name"),
+    app_name: Optional[str] = typer.Option(None, "--app-name", help="App client name in this pool"),
+    client_id: Optional[str] = typer.Option(None, "--client-id", help="App client ID in this pool"),
+    profile: Optional[str] = typer.Option(None, "--profile", help="AWS profile to use"),
+    region: Optional[str] = typer.Option(None, "--region", help="AWS region to use"),
+    google_client_id: Optional[str] = typer.Option(None, "--google-client-id", help="Google OAuth client ID"),
+    google_client_secret: Optional[str] = typer.Option(
+        None, "--google-client-secret", help="Google OAuth client secret"
+    ),
+    google_client_json: Optional[str] = typer.Option(
+        None, "--google-client-json", help="Path to Google OAuth client JSON (web/installed)"
+    ),
+    scopes: str = typer.Option("openid email profile", "--scopes", help="Google authorize scopes"),
+) -> None:
+    """Configure Google IdP on a pool and enable it on an app client."""
+    if not app_name and not client_id:
+        console.print("[red]✗[/red]  Provide one of: --app-name or --client-id")
+        raise typer.Exit(1)
+
+    resolved_profile, resolved_region = _resolve_profile_region(profile, region)
+    resolved_google_id, resolved_google_secret = _resolve_google_client_details(
+        google_client_id=google_client_id,
+        google_client_secret=google_client_secret,
+        google_client_json=google_client_json,
+    )
+
+    try:
+        import boto3
+
+        session = boto3.Session(profile_name=resolved_profile, region_name=resolved_region)
+        cognito = session.client("cognito-idp")
+
+        pool_id = _find_pool_id_by_name(cognito, pool_name)
+        app = _find_client(cognito, pool_id, client_name=app_name, client_id=client_id)
+
+        idp_name = "Google"
+        provider_details = {
+            "client_id": resolved_google_id,
+            "client_secret": resolved_google_secret,
+            "authorize_scopes": scopes,
+        }
+        attribute_mapping = {"email": "email", "username": "sub"}
+
+        # Upsert identity provider
+        idp_exists = False
+        try:
+            cognito.describe_identity_provider(UserPoolId=pool_id, ProviderName=idp_name)
+            idp_exists = True
+        except Exception:
+            idp_exists = False
+
+        if idp_exists:
+            cognito.update_identity_provider(
+                UserPoolId=pool_id,
+                ProviderName=idp_name,
+                ProviderDetails=provider_details,
+                AttributeMapping=attribute_mapping,
+            )
+            console.print("[green]✓[/green]  Updated Google identity provider")
+        else:
+            cognito.create_identity_provider(
+                UserPoolId=pool_id,
+                ProviderName=idp_name,
+                ProviderType=idp_name,
+                ProviderDetails=provider_details,
+                AttributeMapping=attribute_mapping,
+            )
+            console.print("[green]✓[/green]  Created Google identity provider")
+
+        # Ensure app client allows Google provider
+        client_cfg = cognito.describe_user_pool_client(UserPoolId=pool_id, ClientId=app["client_id"])["UserPoolClient"]
+        supported = client_cfg.get("SupportedIdentityProviders", ["COGNITO"])
+        if "Google" not in supported:
+            supported = supported + ["Google"]
+
+        cognito.update_user_pool_client(
+            UserPoolId=pool_id,
+            ClientId=app["client_id"],
+            ClientName=client_cfg.get("ClientName", app["client_name"]),
+            ExplicitAuthFlows=client_cfg.get(
+                "ExplicitAuthFlows",
+                ["ALLOW_USER_PASSWORD_AUTH", "ALLOW_ADMIN_USER_PASSWORD_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"],
+            ),
+            AllowedOAuthFlows=client_cfg.get("AllowedOAuthFlows", ["code"]),
+            AllowedOAuthScopes=client_cfg.get("AllowedOAuthScopes", ["openid", "email", "profile"]),
+            AllowedOAuthFlowsUserPoolClient=client_cfg.get("AllowedOAuthFlowsUserPoolClient", True),
+            CallbackURLs=client_cfg.get("CallbackURLs", []),
+            LogoutURLs=client_cfg.get("LogoutURLs", []),
+            SupportedIdentityProviders=supported,
+        )
+        console.print(f"[green]✓[/green]  Enabled Google provider on app client: {app['client_name']} ({app['client_id']})")
+
+    except Exception as e:
+        console.print(f"[red]✗[/red]  Error: {e}")
+        raise typer.Exit(1)
+
+
 @cognito_app.command("delete-pool")
 def delete_pool(
     pool_name: Optional[str] = typer.Option(None, "--pool-name", help="Cognito pool name to delete"),
@@ -945,6 +1085,9 @@ def delete_pool(
     profile: Optional[str] = typer.Option(None, "--profile", help="AWS profile to use"),
     region: Optional[str] = typer.Option(None, "--region", help="AWS region to use"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
+    delete_domain_first: bool = typer.Option(
+        False, "--delete-domain-first", help="Delete configured Cognito domain before deleting pool"
+    ),
 ) -> None:
     """Delete a Cognito user pool by name or ID."""
     if not pool_name and not pool_id:
@@ -968,15 +1111,32 @@ def delete_pool(
             pool_info = cognito.describe_user_pool(UserPoolId=resolved_pool_id)
             resolved_pool_name = pool_info["UserPool"]["Name"]
 
+        pool_info = cognito.describe_user_pool(UserPoolId=resolved_pool_id)["UserPool"]
+        domain = pool_info.get("Domain")
+        custom_domain = pool_info.get("CustomDomain")
+        domain_name = domain or custom_domain
+
         if not force:
             console.print("[red]⚠  WARNING: This will delete the Cognito pool:[/red]")
             console.print(f"   Pool Name: {resolved_pool_name}")
             console.print(f"   Pool ID: {resolved_pool_id}")
+            if domain_name:
+                console.print(f"   Domain: {domain_name}")
             console.print("   [red]All users will be permanently deleted![/red]")
             confirm = typer.confirm("Are you absolutely sure?")
             if not confirm:
                 console.print("[dim]Cancelled[/dim]")
                 return
+
+        if delete_domain_first and domain_name:
+            console.print(f"[cyan]Deleting pool domain {domain_name}...[/cyan]")
+            cognito.delete_user_pool_domain(UserPoolId=resolved_pool_id, Domain=domain_name)
+            # AWS can take a few seconds to detach domain before pool deletion is accepted.
+            for _ in range(12):
+                latest_pool = cognito.describe_user_pool(UserPoolId=resolved_pool_id)["UserPool"]
+                if not latest_pool.get("Domain") and not latest_pool.get("CustomDomain"):
+                    break
+                time.sleep(1)
 
         cognito.delete_user_pool(UserPoolId=resolved_pool_id)
         console.print(f"[green]✓[/green]  Deleted Cognito pool: {resolved_pool_name} ({resolved_pool_id})")

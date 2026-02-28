@@ -163,6 +163,8 @@ daycog remove-app --pool-name my-pool --app-name web-app-v2 \
 # Delete one pool by name or ID
 daycog delete-pool --pool-name my-pool --profile my-aws-profile --region us-east-1 --force
 daycog delete-pool --pool-id us-east-1_abc123 --profile my-aws-profile --region us-east-1 --force
+# If the pool has a Cognito Hosted UI domain, delete it automatically first
+daycog delete-pool --pool-name my-pool --profile my-aws-profile --region us-east-1 --delete-domain-first --force
 
 # User management
 daycog list-users

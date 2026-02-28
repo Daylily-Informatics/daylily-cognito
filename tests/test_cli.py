@@ -612,6 +612,7 @@ class TestDeletePoolCommand:
         mock_paginator = mock.MagicMock()
         mock_paginator.paginate.return_value = [{"UserPools": [{"Name": "pool-a", "Id": "us-east-1_A"}]}]
         mc.get_paginator.return_value = mock_paginator
+        mc.describe_user_pool.return_value = {"UserPool": {"Name": "pool-a", "Domain": None, "CustomDomain": None}}
         mock_session = mock.MagicMock()
         mock_session.client.return_value = mc
         mock_session_cls.return_value = mock_session
@@ -625,7 +626,7 @@ class TestDeletePoolCommand:
     @mock.patch("boto3.Session")
     def test_delete_pool_by_id_with_force(self, mock_session_cls: mock.MagicMock) -> None:
         mc = _mock_cognito_client()
-        mc.describe_user_pool.return_value = {"UserPool": {"Name": "pool-b"}}
+        mc.describe_user_pool.return_value = {"UserPool": {"Name": "pool-b", "Domain": None, "CustomDomain": None}}
         mock_session = mock.MagicMock()
         mock_session.client.return_value = mc
         mock_session_cls.return_value = mock_session
@@ -648,6 +649,7 @@ class TestDeletePoolCommand:
         mock_paginator = mock.MagicMock()
         mock_paginator.paginate.return_value = [{"UserPools": [{"Name": "pool-a", "Id": "us-east-1_A"}]}]
         mc.get_paginator.return_value = mock_paginator
+        mc.describe_user_pool.return_value = {"UserPool": {"Name": "pool-a", "Domain": None, "CustomDomain": None}}
         mock_session = mock.MagicMock()
         mock_session.client.return_value = mc
         mock_session_cls.return_value = mock_session
@@ -655,6 +657,47 @@ class TestDeletePoolCommand:
         assert result.exit_code == 0
         assert "Cancelled" in result.output
         mc.delete_user_pool.assert_not_called()
+
+    @mock.patch.dict(os.environ, {"AWS_PROFILE": "p", "AWS_REGION": "us-east-1"}, clear=True)
+    @mock.patch("boto3.Session")
+    def test_delete_pool_delete_domain_first(self, mock_session_cls: mock.MagicMock) -> None:
+        mc = _mock_cognito_client()
+        mock_paginator = mock.MagicMock()
+        mock_paginator.paginate.return_value = [{"UserPools": [{"Name": "pool-a", "Id": "us-east-1_A"}]}]
+        mc.get_paginator.return_value = mock_paginator
+        mc.describe_user_pool.side_effect = [
+            {"UserPool": {"Name": "pool-a", "Domain": "pool-a-domain", "CustomDomain": None}},
+            {"UserPool": {"Name": "pool-a", "Domain": None, "CustomDomain": None}},
+        ]
+        mock_session = mock.MagicMock()
+        mock_session.client.return_value = mc
+        mock_session_cls.return_value = mock_session
+
+        result = runner.invoke(
+            cognito_app, ["delete-pool", "--pool-name", "pool-a", "--force", "--delete-domain-first"]
+        )
+        assert result.exit_code == 0
+        mc.delete_user_pool_domain.assert_called_once_with(UserPoolId="us-east-1_A", Domain="pool-a-domain")
+        mc.delete_user_pool.assert_called_once_with(UserPoolId="us-east-1_A")
+
+    @mock.patch.dict(os.environ, {"AWS_PROFILE": "p", "AWS_REGION": "us-east-1"}, clear=True)
+    @mock.patch("boto3.Session")
+    def test_delete_pool_delete_domain_first_no_domain(self, mock_session_cls: mock.MagicMock) -> None:
+        mc = _mock_cognito_client()
+        mock_paginator = mock.MagicMock()
+        mock_paginator.paginate.return_value = [{"UserPools": [{"Name": "pool-a", "Id": "us-east-1_A"}]}]
+        mc.get_paginator.return_value = mock_paginator
+        mc.describe_user_pool.return_value = {"UserPool": {"Name": "pool-a", "Domain": None, "CustomDomain": None}}
+        mock_session = mock.MagicMock()
+        mock_session.client.return_value = mc
+        mock_session_cls.return_value = mock_session
+
+        result = runner.invoke(
+            cognito_app, ["delete-pool", "--pool-name", "pool-a", "--force", "--delete-domain-first"]
+        )
+        assert result.exit_code == 0
+        mc.delete_user_pool_domain.assert_not_called()
+        mc.delete_user_pool.assert_called_once_with(UserPoolId="us-east-1_A")
 
 
 # ---------------------------------------------------------------------------
