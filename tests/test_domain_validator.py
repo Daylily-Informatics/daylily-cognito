@@ -144,4 +144,3 @@ class TestProtocol:
         from daylily_cognito import DomainValidator as DV
 
         assert DV is DomainValidator
-

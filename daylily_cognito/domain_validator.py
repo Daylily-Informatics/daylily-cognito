@@ -45,22 +45,14 @@ class DomainValidator:
         if stripped_allow in ("", "all"):
             self._allow_all = True
         else:
-            self._allowed = {
-                d.strip().lower()
-                for d in allowed_domains.split(",")
-                if d.strip()
-            }
+            self._allowed = {d.strip().lower() for d in allowed_domains.split(",") if d.strip()}
 
         # Parse blocked_domains
         stripped_block = blocked_domains.strip().lower()
         if stripped_block == "all":
             self._block_all = True
         elif stripped_block:
-            self._blocked = {
-                d.strip().lower()
-                for d in blocked_domains.split(",")
-                if d.strip()
-            }
+            self._blocked = {d.strip().lower() for d in blocked_domains.split(",") if d.strip()}
 
     def validate_email_domain(self, email: str) -> tuple[bool, str]:
         """Validate an email address's domain against allow/block lists.
@@ -94,4 +86,3 @@ class DomainValidator:
             return (True, "")
 
         return (False, f"Domain '{domain}' is not in the allowed list")
-

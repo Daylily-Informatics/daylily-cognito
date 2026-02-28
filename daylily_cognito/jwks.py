@@ -157,8 +157,7 @@ def verify_token_with_jwks(
         from jose import jwt
     except ImportError as e:
         raise ImportError(
-            "python-jose is required for JWT verification. "
-            "Install with: pip install 'python-jose[cryptography]'"
+            "python-jose is required for JWT verification. Install with: pip install 'python-jose[cryptography]'"
         ) from e
 
     # Get kid from JWT header

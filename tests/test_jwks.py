@@ -17,6 +17,7 @@ from daylily_cognito.jwks import JWKSCache, build_jwks_url, fetch_jwks, verify_t
 # RSA key fixtures
 # ---------------------------------------------------------------------------
 
+
 def _generate_rsa_jwk(kid: str = "test-kid-1") -> dict:
     """Generate an RSA key pair and return the JWK dict."""
     from cryptography.hazmat.primitives import serialization
@@ -105,9 +106,7 @@ class TestFetchJwks:
     def test_http_error_raises_runtime_error(self) -> None:
         import urllib.error
 
-        http_err = urllib.error.HTTPError(
-            url="https://example.com", code=404, msg="Not Found", hdrs={}, fp=None
-        )
+        http_err = urllib.error.HTTPError(url="https://example.com", code=404, msg="Not Found", hdrs={}, fp=None)
         with mock.patch("daylily_cognito.jwks.urllib.request.urlopen", side_effect=http_err):
             with pytest.raises(RuntimeError, match="JWKS fetch failed"):
                 fetch_jwks("us-west-2", "us-west-2_abc123")
@@ -198,9 +197,7 @@ class TestVerifyTokenWithJwks:
             "iss": issuer,
             "exp": int(time.time()) + 3600,
         }
-        token = _create_signed_token(
-            rsa_key_pair["private_pem"], rsa_key_pair["kid"], claims
-        )
+        token = _create_signed_token(rsa_key_pair["private_pem"], rsa_key_pair["kid"], claims)
 
         with mock.patch("daylily_cognito.jwks.fetch_jwks", return_value=jwks_response):
             result = verify_token_with_jwks(token, region, pool_id)
@@ -219,9 +216,7 @@ class TestVerifyTokenWithJwks:
             "iss": issuer,
             "exp": int(time.time()) - 100,
         }
-        token = _create_signed_token(
-            rsa_key_pair["private_pem"], rsa_key_pair["kid"], claims
-        )
+        token = _create_signed_token(rsa_key_pair["private_pem"], rsa_key_pair["kid"], claims)
 
         with mock.patch("daylily_cognito.jwks.fetch_jwks", return_value=jwks_response):
             with pytest.raises(ExpiredSignatureError):
@@ -235,9 +230,7 @@ class TestVerifyTokenWithJwks:
             "iss": "https://evil.example.com",
             "exp": int(time.time()) + 3600,
         }
-        token = _create_signed_token(
-            rsa_key_pair["private_pem"], rsa_key_pair["kid"], claims
-        )
+        token = _create_signed_token(rsa_key_pair["private_pem"], rsa_key_pair["kid"], claims)
 
         with mock.patch("daylily_cognito.jwks.fetch_jwks", return_value=jwks_response):
             with pytest.raises(JWTError):
@@ -257,9 +250,7 @@ class TestVerifyTokenWithJwks:
             "iss": issuer,
             "exp": int(time.time()) + 3600,
         }
-        token = _create_signed_token(
-            other_key["private_pem"], other_key["kid"], claims
-        )
+        token = _create_signed_token(other_key["private_pem"], other_key["kid"], claims)
 
         with mock.patch("daylily_cognito.jwks.fetch_jwks", return_value=jwks_response):
             with pytest.raises(JWTError):
@@ -282,9 +273,7 @@ class TestVerifyTokenWithJwks:
             "iss": issuer,
             "exp": int(time.time()) + 3600,
         }
-        token = _create_signed_token(
-            rsa_key_pair["private_pem"], rsa_key_pair["kid"], claims
-        )
+        token = _create_signed_token(rsa_key_pair["private_pem"], rsa_key_pair["kid"], claims)
 
         with mock.patch("daylily_cognito.jwks.fetch_jwks", return_value=jwks_response):
             cache = JWKSCache(region, pool_id)

@@ -130,7 +130,6 @@ def verify_jwt_claims_unverified_signature(
         )
 
 
-
 def verify_jwt_claims(
     token: str,
     *,
@@ -163,16 +162,13 @@ def verify_jwt_claims(
         from jose import JWTError
     except ImportError as e:
         raise ImportError(
-            "python-jose is required for JWT verification. "
-            "Install with: pip install 'python-jose[cryptography]'"
+            "python-jose is required for JWT verification. Install with: pip install 'python-jose[cryptography]'"
         ) from e
 
     from .jwks import verify_token_with_jwks
 
     try:
-        claims = verify_token_with_jwks(
-            token, region, user_pool_id, cache=cache
-        )
+        claims = verify_token_with_jwks(token, region, user_pool_id, cache=cache)
 
         # Verify token hasn't expired (manual check for consistent error message)
         if "exp" in claims:
