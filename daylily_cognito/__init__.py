@@ -22,6 +22,7 @@ Example usage:
 """
 
 from .auth import CognitoAuth
+from .domain_validator import DomainValidator
 from .cli import cognito_app, main
 from .config import CognitoConfig
 from .fastapi import create_auth_dependency, security
@@ -45,6 +46,8 @@ __all__ = [
     "CognitoConfig",
     # Auth
     "CognitoAuth",
+    # Domain validation
+    "DomainValidator",
     # FastAPI
     "create_auth_dependency",
     "security",
