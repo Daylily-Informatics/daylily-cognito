@@ -178,6 +178,20 @@ class TestExchangeGoogleCodeForTokens:
             )
 
     @mock.patch("daylily_cognito.google.urllib.request.urlopen")
+    def test_exchange_timeout_via_urlerror(self, mock_urlopen: mock.MagicMock) -> None:
+        import urllib.error
+
+        mock_urlopen.side_effect = urllib.error.URLError(reason=socket.timeout("timed out"))
+
+        with pytest.raises(RuntimeError, match="timed out"):
+            exchange_google_code_for_tokens(
+                client_id="cid",
+                client_secret="csecret",
+                code="auth-code",
+                redirect_uri="http://localhost/cb",
+            )
+
+    @mock.patch("daylily_cognito.google.urllib.request.urlopen")
     def test_exchange_failure(self, mock_urlopen: mock.MagicMock) -> None:
         import urllib.error
 
@@ -229,6 +243,15 @@ class TestFetchGoogleUserinfo:
     @mock.patch("daylily_cognito.google.urllib.request.urlopen")
     def test_fetch_timeout(self, mock_urlopen: mock.MagicMock) -> None:
         mock_urlopen.side_effect = socket.timeout("timed out")
+
+        with pytest.raises(RuntimeError, match="timed out"):
+            fetch_google_userinfo("ya29.abc")
+
+    @mock.patch("daylily_cognito.google.urllib.request.urlopen")
+    def test_fetch_timeout_via_urlerror(self, mock_urlopen: mock.MagicMock) -> None:
+        import urllib.error
+
+        mock_urlopen.side_effect = urllib.error.URLError(reason=socket.timeout("timed out"))
 
         with pytest.raises(RuntimeError, match="timed out"):
             fetch_google_userinfo("ya29.abc")

@@ -62,6 +62,8 @@ def fetch_jwks(region: str, user_pool_id: str) -> dict[str, Any]:
         error_body = e.read().decode("utf-8") if e.fp else ""
         raise RuntimeError(f"JWKS fetch failed: HTTP {e.code} - {error_body}") from e
     except urllib.error.URLError as e:
+        if isinstance(e.reason, socket.timeout):
+            raise RuntimeError(f"JWKS fetch timed out for {url}") from e
         raise RuntimeError(f"JWKS fetch failed: {e.reason}") from e
 
 
