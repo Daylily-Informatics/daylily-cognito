@@ -13,15 +13,14 @@ from jose.backends import RSAKey
 
 from daylily_cognito.jwks import JWKSCache, build_jwks_url, fetch_jwks, verify_token_with_jwks
 
-
 # ---------------------------------------------------------------------------
 # RSA key fixtures
 # ---------------------------------------------------------------------------
 
 def _generate_rsa_jwk(kid: str = "test-kid-1") -> dict:
     """Generate an RSA key pair and return the JWK dict."""
-    from cryptography.hazmat.primitives.asymmetric import rsa
     from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
 
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     # Get the public key in JWK format via python-jose
@@ -210,7 +209,7 @@ class TestVerifyTokenWithJwks:
         assert result["client_id"] == "test-client"
 
     def test_expired_token_raises(self, rsa_key_pair, jwks_response) -> None:
-        from jose import ExpiredSignatureError, JWTError
+        from jose import ExpiredSignatureError
 
         region = "us-west-2"
         pool_id = "us-west-2_abc123"

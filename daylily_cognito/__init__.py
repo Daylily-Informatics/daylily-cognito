@@ -22,9 +22,9 @@ Example usage:
 """
 
 from .auth import CognitoAuth
-from .domain_validator import DomainValidator
 from .cli import cognito_app, main
 from .config import CognitoConfig
+from .domain_validator import DomainValidator
 from .fastapi import create_auth_dependency, security
 from .google import (
     auto_create_cognito_user_from_google,
@@ -33,13 +33,13 @@ from .google import (
     fetch_google_userinfo,
     generate_state_token,
 )
+from .jwks import JWKSCache
 from .oauth import (
     build_authorization_url,
     build_logout_url,
     exchange_authorization_code,
     refresh_with_refresh_token,
 )
-from .jwks import JWKSCache
 from .tokens import decode_jwt_unverified, verify_jwt_claims, verify_jwt_claims_unverified_signature
 
 __all__ = [

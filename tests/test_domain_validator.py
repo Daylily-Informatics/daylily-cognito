@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
 from daylily_cognito.domain_validator import DomainValidator
-
 
 # ── Allow-all defaults ───────────────────────────────────────────────
 
