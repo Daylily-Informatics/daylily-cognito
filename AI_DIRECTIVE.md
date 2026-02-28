@@ -31,6 +31,10 @@ If still missing, the command errors.
 ```sh
 daycog list-pools --profile <profile> --region <region>
 daycog setup --name <pool-name> --port <port> --profile <profile> --region <region>
+daycog list-apps --pool-name <pool-name> --profile <profile> --region <region>
+daycog add-app --pool-name <pool-name> --app-name <app-name> --callback-url <url> --profile <profile> --region <region>
+daycog edit-app --pool-name <pool-name> --app-name <app-name> --profile <profile> --region <region>
+daycog remove-app --pool-name <pool-name> --app-name <app-name> --profile <profile> --region <region> --force
 daycog delete-pool --pool-name <pool-name> --profile <profile> --region <region> --force
 ```
 
@@ -56,7 +60,8 @@ daycog setup-google --client-id <id> --client-secret <secret>
 
 ## Config Files
 `daycog setup` writes/updates:
-- `~/.config/daycog/<pool-name>.env`
+- `~/.config/daycog/<pool-name>.<region>.env`
+- `~/.config/daycog/<pool-name>.<region>.<app-name>.env`
 - `~/.config/daycog/default.env`
 
 These files contain:
@@ -72,13 +77,20 @@ Use these for file inspection/sync:
 
 ```sh
 daycog config print
-daycog config print --pool-name <pool-name>
+daycog config print --pool-name <pool-name> --region <region>
 daycog config create --pool-name <pool-name> --profile <profile> --region <region>
 daycog config update --pool-name <pool-name> --profile <profile> --region <region>
 ```
 
 `config create/update` query AWS for pool details and keep `default.env` aligned with the selected pool.
+For pool-scoped print, region is required because filenames are region-scoped.
 If multiple app clients exist in a pool, the CLI uses the first client returned by AWS.
+
+Multi-app guidance:
+- Keep one app file per app client (`<pool>.<region>.<app>.env`).
+- Pool file (`<pool>.<region>.env`) stores the selected app context for that pool/region.
+- `default.env` stores active global context.
+- Use `--set-default` on `add-app`/`edit-app` when the new app should become active in pool/default env files.
 
 ## Guardrails for Agents
 - Prefer `daycog` over ad-hoc boto3 scripts for operational actions.
