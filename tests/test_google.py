@@ -362,3 +362,70 @@ class TestAutoCreateCognitoUserFromGoogle:
 
         with pytest.raises(RuntimeError, match="Failed to create Cognito user"):
             auto_create_cognito_user_from_google(auth, SAMPLE_USERINFO)
+
+
+# ---------------------------------------------------------------------------
+# Domain validation on Google SSO path
+# ---------------------------------------------------------------------------
+
+
+class TestGoogleSSODomainValidation:
+    """Verify that auto_create_cognito_user_from_google enforces domain validation."""
+
+    def test_blocked_domain_raises_403(self) -> None:
+        """If _validate_email_domain raises HTTPException, it propagates."""
+        from fastapi import HTTPException
+
+        auth = _make_mock_auth(user_exists=False)
+        # Wire up _validate_email_domain to reject the domain
+        auth._validate_email_domain = mock.MagicMock(
+            side_effect=HTTPException(status_code=403, detail="Domain blocked"),
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            auto_create_cognito_user_from_google(auth, SAMPLE_USERINFO)
+
+        assert exc_info.value.status_code == 403
+        auth._validate_email_domain.assert_called_once_with("jsmith@example.com")
+        # Should NOT have attempted Cognito lookup or creation
+        auth.cognito.admin_get_user.assert_not_called()
+        auth.cognito.admin_create_user.assert_not_called()
+
+    def test_allowed_domain_proceeds_normally(self) -> None:
+        """If _validate_email_domain passes, user creation proceeds."""
+        auth = _make_mock_auth(user_exists=False)
+        auth._validate_email_domain = mock.MagicMock()  # no-op (no side effect)
+
+        result = auto_create_cognito_user_from_google(auth, SAMPLE_USERINFO)
+
+        assert result["created"] is True
+        assert result["email"] == "jsmith@example.com"
+        auth._validate_email_domain.assert_called_once_with("jsmith@example.com")
+        auth.cognito.admin_create_user.assert_called_once()
+
+    def test_no_settings_is_passthrough(self) -> None:
+        """When auth has no _validate_email_domain, validation is skipped."""
+        auth = _make_mock_auth(user_exists=False)
+        # Remove _validate_email_domain so hasattr returns False
+        del auth._validate_email_domain
+
+        result = auto_create_cognito_user_from_google(auth, SAMPLE_USERINFO)
+
+        assert result["created"] is True
+        assert result["email"] == "jsmith@example.com"
+
+    def test_blocked_domain_for_existing_user(self) -> None:
+        """Even existing users are blocked if their domain fails validation."""
+        from fastapi import HTTPException
+
+        auth = _make_mock_auth(user_exists=True)
+        auth._validate_email_domain = mock.MagicMock(
+            side_effect=HTTPException(status_code=403, detail="Domain not allowed"),
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            auto_create_cognito_user_from_google(auth, SAMPLE_USERINFO)
+
+        assert exc_info.value.status_code == 403
+        # Should NOT have looked up the user since validation failed first
+        auth.cognito.admin_get_user.assert_not_called()

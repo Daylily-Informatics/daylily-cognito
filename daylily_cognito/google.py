@@ -211,6 +211,7 @@ def auto_create_cognito_user_from_google(
 
     Raises:
         ValueError: If google_userinfo is missing required fields.
+        HTTPException: If email domain fails validation (403 Forbidden).
         RuntimeError: If Cognito operations fail unexpectedly.
     """
     email = google_userinfo.get("email")
@@ -220,6 +221,12 @@ def auto_create_cognito_user_from_google(
         raise ValueError("Google userinfo missing 'email' field")
     if not google_sub:
         raise ValueError("Google userinfo missing 'sub' field")
+
+    # Validate email domain before any user lookup or creation.
+    # If auth.settings is None, this is a no-op (backward compatible).
+    # If domain is blocked, raises HTTPException(403).
+    if hasattr(auth, "_validate_email_domain"):
+        auth._validate_email_domain(email)
 
     effective_customer_id = customer_id or google_sub
 
