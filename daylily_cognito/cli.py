@@ -139,18 +139,43 @@ def status() -> None:
 def setup(
     pool_name: str = typer.Option("ursa-users", "--name", "-n", help="User pool name"),
     port: int = typer.Option(8001, "--port", "-p", help="Server port for callback URL"),
+    profile: Optional[str] = typer.Option(
+        None,
+        "--profile",
+        help="AWS profile to use (defaults to AWS_PROFILE env var)",
+    ),
+    region: Optional[str] = typer.Option(
+        None,
+        "--region",
+        help="AWS region to use (defaults to AWS_REGION env var)",
+    ),
 ):
     """Create Cognito User Pool and App Client."""
-    _check_aws_profile()
+    resolved_profile = profile or os.environ.get("AWS_PROFILE")
+    resolved_region = region or os.environ.get("AWS_REGION")
+
+    if not resolved_profile:
+        console.print("[red]✗[/red]  AWS profile not set")
+        console.print("   Pass [cyan]--profile[/cyan] or set [cyan]export AWS_PROFILE=your-profile[/cyan]")
+        raise typer.Exit(1)
+
+    if not resolved_region:
+        console.print("[red]✗[/red]  AWS region not set")
+        console.print("   Pass [cyan]--region[/cyan] or set [cyan]export AWS_REGION=us-west-2[/cyan]")
+        raise typer.Exit(1)
+
+    # Ensure boto3 and any downstream helpers see explicit values from flags.
+    os.environ["AWS_PROFILE"] = resolved_profile
+    os.environ["AWS_REGION"] = resolved_region
 
     console.print("[cyan]Creating Cognito resources...[/cyan]")
 
     try:
         import boto3
 
-        region = _get_cognito_region()
-        console.print(f"[dim]Region: {region}[/dim]")
-        cognito = boto3.client("cognito-idp", region_name=region)
+        console.print(f"[dim]Profile: {resolved_profile}[/dim]")
+        console.print(f"[dim]Region: {resolved_region}[/dim]")
+        cognito = boto3.client("cognito-idp", region_name=resolved_region)
 
         # Check if pool already exists
         pools = cognito.list_user_pools(MaxResults=60)

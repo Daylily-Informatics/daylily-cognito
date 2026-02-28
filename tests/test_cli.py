@@ -15,6 +15,7 @@ runner = typer.testing.CliRunner()
 # Common env vars for tests (all lazy-imported boto3 calls need to be mocked separately)
 _BASE_ENV = {
     "AWS_PROFILE": "test-profile",
+    "AWS_REGION": "us-west-2",
     "COGNITO_USER_POOL_ID": "us-west-2_TestPool",
     "COGNITO_APP_CLIENT_ID": "test-client-id",
     "COGNITO_REGION": "us-west-2",
@@ -74,8 +75,40 @@ class TestSetupCommand:
         result = runner.invoke(cognito_app, ["setup", "--name", "my-pool"])
         assert result.exit_code == 0
         assert "new-cid" in result.output
+        assert "Profile: test-profile" in result.output
+        assert "Region: us-west-2" in result.output
+        mock_boto_client.assert_called_once_with("cognito-idp", region_name="us-west-2")
         mc.create_user_pool.assert_called_once()
         mc.create_user_pool_client.assert_called_once()
+
+    @mock.patch.dict(
+        os.environ,
+        {
+            "COGNITO_USER_POOL_ID": "us-west-2_TestPool",
+            "COGNITO_APP_CLIENT_ID": "test-client-id",
+        },
+        clear=True,
+    )
+    def test_setup_errors_when_aws_profile_or_region_missing(self) -> None:
+        result = runner.invoke(cognito_app, ["setup"])
+        assert result.exit_code == 1
+        assert "AWS profile not set" in result.output
+
+    @mock.patch.dict(os.environ, _BASE_ENV, clear=False)
+    @mock.patch("boto3.client")
+    def test_setup_flags_override_env_and_set_process_env(self, mock_boto_client: mock.MagicMock) -> None:
+        mc = _mock_cognito_client()
+        mock_boto_client.return_value = mc
+        result = runner.invoke(
+            cognito_app,
+            ["setup", "--name", "my-pool", "--profile", "flag-profile", "--region", "us-east-1"],
+        )
+        assert result.exit_code == 0
+        assert "Profile: flag-profile" in result.output
+        assert "Region: us-east-1" in result.output
+        mock_boto_client.assert_called_once_with("cognito-idp", region_name="us-east-1")
+        assert os.environ["AWS_PROFILE"] == "flag-profile"
+        assert os.environ["AWS_REGION"] == "us-east-1"
 
 
 # ---------------------------------------------------------------------------

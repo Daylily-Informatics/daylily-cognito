@@ -1,0 +1,80 @@
+# Source this script to create/activate a local venv and install this repo
+# in editable mode so the `daycog` CLI is available from your shell.
+
+_DAYCOG_SOURCED=0
+if [ -n "${BASH_SOURCE:-}" ]; then
+  if [ "${BASH_SOURCE[0]}" != "$0" ]; then
+    _DAYCOG_SOURCED=1
+  fi
+elif [ -n "${ZSH_VERSION:-}" ]; then
+  _DAYCOG_ZSH_SOURCE=$(eval 'printf %s "${(%):-%N}"')
+  case "${ZSH_EVAL_CONTEXT:-}" in
+    *:file|file)
+      _DAYCOG_SOURCED=1
+      ;;
+  esac
+fi
+
+if [ "$_DAYCOG_SOURCED" -ne 1 ]; then
+  echo "This script must be sourced: source daycog_activate" >&2
+  exit 1
+fi
+
+if [ -n "${BASH_SOURCE:-}" ]; then
+  _DAYCOG_SOURCE=${BASH_SOURCE[0]}
+elif [ -n "${ZSH_VERSION:-}" ]; then
+  _DAYCOG_SOURCE=$_DAYCOG_ZSH_SOURCE
+else
+  _DAYCOG_SOURCE=$0
+fi
+
+_DAYCOG_ACTIVATE_DIR=$(
+  cd -- "$(dirname -- "$_DAYCOG_SOURCE")" >/dev/null 2>&1 && pwd
+)
+
+if [ -z "$_DAYCOG_ACTIVATE_DIR" ]; then
+  echo "Could not determine repo directory for daycog_activate" >&2
+  return 1
+fi
+
+_DAYCOG_VENV_DIR="$_DAYCOG_ACTIVATE_DIR/.venv"
+
+if [ ! -x "$_DAYCOG_VENV_DIR/bin/python" ]; then
+  echo "Creating virtual environment at $_DAYCOG_VENV_DIR"
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "python3 not found on PATH" >&2
+    return 1
+  fi
+  if ! python3 -m venv "$_DAYCOG_VENV_DIR"; then
+    echo "Failed to create virtual environment" >&2
+    return 1
+  fi
+fi
+
+# shellcheck disable=SC1090
+if ! . "$_DAYCOG_VENV_DIR/bin/activate"; then
+  echo "Failed to activate venv at $_DAYCOG_VENV_DIR" >&2
+  return 1
+fi
+
+if ! python -c "import setuptools" >/dev/null 2>&1; then
+  echo "Installing setuptools/wheel required for editable install..."
+  if ! python -m pip install setuptools wheel; then
+    echo "Failed to install setuptools/wheel" >&2
+    return 1
+  fi
+fi
+
+echo "Installing daylily-cognito in editable mode..."
+if ! python -m pip install --no-build-isolation -e "$_DAYCOG_ACTIVATE_DIR"; then
+  echo "Editable install failed" >&2
+  return 1
+fi
+
+echo "daycog is ready: $(command -v daycog)"
+
+unset _DAYCOG_ACTIVATE_DIR
+unset _DAYCOG_SOURCE
+unset _DAYCOG_SOURCED
+unset _DAYCOG_VENV_DIR
+unset _DAYCOG_ZSH_SOURCE
