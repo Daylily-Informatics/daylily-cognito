@@ -708,6 +708,73 @@ class TestAddGoogleIdpCommand:
 
 
 # ---------------------------------------------------------------------------
+# setup-with-google
+# ---------------------------------------------------------------------------
+
+
+class TestSetupWithGoogleCommand:
+    @mock.patch.dict(os.environ, {"AWS_PROFILE": "p", "AWS_REGION": "us-east-1"}, clear=True)
+    @mock.patch("boto3.Session")
+    @mock.patch("boto3.client")
+    def test_setup_with_google_runs_both_steps(
+        self, mock_boto_client: mock.MagicMock, mock_session_cls: mock.MagicMock, tmp_path
+    ) -> None:
+        # setup() path
+        mc_setup = _mock_cognito_client()
+        mc_setup.list_user_pools.return_value = {"UserPools": []}
+        mc_setup.create_user_pool.return_value = {"UserPool": {"Id": "us-east-1_NEWPOOL"}}
+        mc_setup.create_user_pool_client.return_value = {"UserPoolClient": {"ClientId": "cid-new"}}
+        mock_boto_client.return_value = mc_setup
+
+        # add_google_idp() path
+        mc_session = _mock_cognito_client()
+        mock_paginator = mock.MagicMock()
+        mock_paginator.paginate.return_value = [{"UserPools": [{"Name": "pool-a", "Id": "us-east-1_NEWPOOL"}]}]
+        mc_session.get_paginator.return_value = mock_paginator
+        mc_session.list_user_pool_clients.return_value = {"UserPoolClients": [{"ClientName": "web-app", "ClientId": "cid-new"}]}
+        mc_session.describe_identity_provider.side_effect = Exception("not found")
+        mc_session.describe_user_pool_client.return_value = {
+            "UserPoolClient": {
+                "ClientName": "web-app",
+                "ExplicitAuthFlows": ["ALLOW_USER_PASSWORD_AUTH"],
+                "AllowedOAuthFlows": ["code"],
+                "AllowedOAuthScopes": ["openid", "email", "profile"],
+                "AllowedOAuthFlowsUserPoolClient": True,
+                "CallbackURLs": ["http://localhost:8001/auth/callback"],
+                "LogoutURLs": [],
+                "SupportedIdentityProviders": ["COGNITO"],
+            }
+        }
+        mock_session = mock.MagicMock()
+        mock_session.client.return_value = mc_session
+        mock_session_cls.return_value = mock_session
+
+        json_path = tmp_path / "google-client.json"
+        json_path.write_text('{"web":{"client_id":"gid-123","client_secret":"gsecret-456"}}', encoding="utf-8")
+
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            result = runner.invoke(
+                cognito_app,
+                [
+                    "setup-with-google",
+                    "--name",
+                    "pool-a",
+                    "--client-name",
+                    "web-app",
+                    "--google-client-json",
+                    str(json_path),
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert "Setup with Google IdP complete" in result.output
+        mc_setup.create_user_pool.assert_called_once()
+        mc_setup.create_user_pool_client.assert_called_once()
+        mc_session.create_identity_provider.assert_called_once()
+        mc_session.update_user_pool_client.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # delete-pool
 # ---------------------------------------------------------------------------
 

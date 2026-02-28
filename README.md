@@ -165,6 +165,14 @@ daycog add-google-idp --pool-name my-pool --app-name web-app \
   --google-client-json ./client_secret.json \
   --profile my-aws-profile --region us-east-1
 
+# All-in-one: create pool/app and configure Google IdP in one command
+daycog setup-with-google \
+  --name my-pool \
+  --client-name web-app \
+  --callback-url http://localhost:8000/auth/google/callback \
+  --google-client-json ./client_secret.json \
+  --profile my-aws-profile --region us-east-1
+
 # Delete one pool by name or ID
 daycog delete-pool --pool-name my-pool --profile my-aws-profile --region us-east-1 --force
 daycog delete-pool --pool-id us-east-1_abc123 --profile my-aws-profile --region us-east-1 --force
@@ -372,6 +380,17 @@ Or configure Cognito Google federation directly:
 
 ```bash
 daycog add-google-idp --pool-name my-pool --app-name web-app \
+  --google-client-json ./client_secret.json \
+  --profile my-aws-profile --region us-east-1
+```
+
+Or run all-in-one setup + Google IdP:
+
+```bash
+daycog setup-with-google \
+  --name my-pool \
+  --client-name web-app \
+  --callback-url http://localhost:8000/auth/google/callback \
   --google-client-json ./client_secret.json \
   --profile my-aws-profile --region us-east-1
 ```

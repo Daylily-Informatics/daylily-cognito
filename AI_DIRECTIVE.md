@@ -31,6 +31,7 @@ If still missing, the command errors.
 ```sh
 daycog list-pools --profile <profile> --region <region>
 daycog setup --name <pool-name> --port <port> --profile <profile> --region <region>
+daycog setup-with-google --name <pool-name> --client-name <app-name> --profile <profile> --region <region>
 daycog list-apps --pool-name <pool-name> --profile <profile> --region <region>
 daycog add-app --pool-name <pool-name> --app-name <app-name> --callback-url <url> --profile <profile> --region <region>
 daycog edit-app --pool-name <pool-name> --app-name <app-name> --profile <profile> --region <region>
@@ -96,6 +97,7 @@ Multi-app guidance:
 - `default.env` stores active global context.
 - Use `--set-default` on `add-app`/`edit-app` when the new app should become active in pool/default env files.
 - For Google federation, use `add-google-idp` with `--google-client-json` or credential flags/env vars.
+- Prefer `setup-with-google` for first-time pool/app provisioning plus Google IdP in one operation.
 - Do not assume Google client secret can be fetched from Google automatically; use provided JSON or env credentials.
 
 ## Guardrails for Agents

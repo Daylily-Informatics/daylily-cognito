@@ -1078,6 +1078,86 @@ def add_google_idp(
         raise typer.Exit(1)
 
 
+@cognito_app.command("setup-with-google")
+def setup_with_google(
+    pool_name: str = typer.Option("ursa-users", "--name", "-n", help="User pool name"),
+    client_name: Optional[str] = typer.Option(None, "--client-name", help="App client name (default: <pool-name>-client)"),
+    port: int = typer.Option(8001, "--port", "-p", help="Server port for callback URL"),
+    callback_path: str = typer.Option(
+        "/auth/callback", "--callback-path", help="Callback path used with --port when --callback-url is not set"
+    ),
+    callback_url: Optional[str] = typer.Option(None, "--callback-url", help="Full callback URL override"),
+    logout_url: Optional[str] = typer.Option(None, "--logout-url", help="Optional logout URL for app client"),
+    profile: Optional[str] = typer.Option(None, "--profile", help="AWS profile to use (defaults to AWS_PROFILE env var)"),
+    region: Optional[str] = typer.Option(None, "--region", help="AWS region to use (defaults to AWS_REGION env var)"),
+    print_exports: bool = typer.Option(
+        False, "--print-exports", help="Print export commands so callers can eval them in the parent shell"
+    ),
+    autoprovision: bool = typer.Option(
+        False, "--autoprovision", help="If set, reuse existing app client by --client-name when present"
+    ),
+    generate_secret: bool = typer.Option(False, "--generate-secret", help="Create app client with secret"),
+    oauth_flows: str = typer.Option("code", "--oauth-flows", help="Comma-separated OAuth flows"),
+    scopes: str = typer.Option("openid,email,profile", "--scopes", help="Comma-separated OAuth scopes"),
+    idps: str = typer.Option("COGNITO", "--idp", help="Comma-separated identity providers"),
+    password_min_length: int = typer.Option(8, "--password-min-length", help="Minimum password length"),
+    require_uppercase: bool = typer.Option(True, "--require-uppercase/--no-require-uppercase", help="Require uppercase"),
+    require_lowercase: bool = typer.Option(True, "--require-lowercase/--no-require-lowercase", help="Require lowercase"),
+    require_numbers: bool = typer.Option(True, "--require-numbers/--no-require-numbers", help="Require numbers"),
+    require_symbols: bool = typer.Option(False, "--require-symbols/--no-require-symbols", help="Require symbols"),
+    mfa: str = typer.Option("off", "--mfa", help="MFA mode: off, optional, required"),
+    tags: Optional[str] = typer.Option(None, "--tags", help="Comma-separated tags in key=value format"),
+    google_client_id: Optional[str] = typer.Option(None, "--google-client-id", help="Google OAuth client ID"),
+    google_client_secret: Optional[str] = typer.Option(
+        None, "--google-client-secret", help="Google OAuth client secret"
+    ),
+    google_client_json: Optional[str] = typer.Option(
+        None, "--google-client-json", help="Path to Google OAuth client JSON (web/installed)"
+    ),
+    google_scopes: str = typer.Option("openid email profile", "--google-scopes", help="Google authorize scopes"),
+) -> None:
+    """All-in-one setup: provision pool/app client and configure Google IdP."""
+    resolved_client_name = client_name or f"{pool_name}-client"
+
+    setup(
+        pool_name=pool_name,
+        client_name=resolved_client_name,
+        port=port,
+        callback_path=callback_path,
+        callback_url=callback_url,
+        logout_url=logout_url,
+        profile=profile,
+        region=region,
+        print_exports=print_exports,
+        autoprovision=autoprovision,
+        generate_secret=generate_secret,
+        oauth_flows=oauth_flows,
+        scopes=scopes,
+        idps=idps,
+        password_min_length=password_min_length,
+        require_uppercase=require_uppercase,
+        require_lowercase=require_lowercase,
+        require_numbers=require_numbers,
+        require_symbols=require_symbols,
+        mfa=mfa,
+        tags=tags,
+    )
+
+    add_google_idp(
+        pool_name=pool_name,
+        app_name=resolved_client_name,
+        client_id=None,
+        profile=profile,
+        region=region,
+        google_client_id=google_client_id,
+        google_client_secret=google_client_secret,
+        google_client_json=google_client_json,
+        scopes=google_scopes,
+    )
+
+    console.print("[green]✓[/green]  Setup with Google IdP complete")
+
+
 @cognito_app.command("delete-pool")
 def delete_pool(
     pool_name: Optional[str] = typer.Option(None, "--pool-name", help="Cognito pool name to delete"),
