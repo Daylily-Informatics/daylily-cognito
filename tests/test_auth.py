@@ -200,6 +200,69 @@ class TestUpdateAppClientAuthFlows:
 
 
 # ---------------------------------------------------------------------------
+# delete_app_client
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteAppClient:
+    def test_raises_if_no_pool_id(self) -> None:
+        auth, _ = _build_auth(user_pool_id="")
+        with pytest.raises(ValueError, match="user_pool_id is not set"):
+            auth.delete_app_client(client_id="cid")
+
+    def test_deletes_by_explicit_client_id(self) -> None:
+        auth, mock_client = _build_auth(app_client_id="current-cid")
+        assert auth.delete_app_client(client_id="target-cid") is True
+        mock_client.delete_user_pool_client.assert_called_once_with(
+            UserPoolId="us-west-2_TestPool",
+            ClientId="target-cid",
+        )
+        # Explicit delete of another client should not clear current app_client_id
+        assert auth.app_client_id == "current-cid"
+
+    def test_deletes_by_client_name(self) -> None:
+        auth, mock_client = _build_auth(app_client_id="current-cid")
+        mock_client.list_user_pool_clients.return_value = {
+            "UserPoolClients": [{"ClientName": "web-app", "ClientId": "resolved-cid"}]
+        }
+        assert auth.delete_app_client(client_name="web-app") is True
+        mock_client.delete_user_pool_client.assert_called_once_with(
+            UserPoolId="us-west-2_TestPool",
+            ClientId="resolved-cid",
+        )
+
+    def test_client_name_not_found_returns_false(self) -> None:
+        auth, mock_client = _build_auth(app_client_id="current-cid")
+        mock_client.list_user_pool_clients.return_value = {"UserPoolClients": []}
+        assert auth.delete_app_client(client_name="missing-app") is False
+        mock_client.delete_user_pool_client.assert_not_called()
+
+    def test_client_name_lookup_error_returns_false(self) -> None:
+        auth, mock_client = _build_auth(app_client_id="current-cid")
+        mock_client.list_user_pool_clients.side_effect = _make_client_error("InternalError")
+        assert auth.delete_app_client(client_name="web-app") is False
+        mock_client.delete_user_pool_client.assert_not_called()
+
+    def test_falls_back_to_self_app_client_id_and_clears_it(self) -> None:
+        auth, mock_client = _build_auth(app_client_id="current-cid")
+        assert auth.delete_app_client() is True
+        mock_client.delete_user_pool_client.assert_called_once_with(
+            UserPoolId="us-west-2_TestPool",
+            ClientId="current-cid",
+        )
+        assert auth.app_client_id == ""
+
+    def test_raises_if_no_target_client(self) -> None:
+        auth, _ = _build_auth(app_client_id="")
+        with pytest.raises(ValueError, match="client_id, client_name, or self.app_client_id must be set"):
+            auth.delete_app_client()
+
+    def test_delete_failure_returns_false(self) -> None:
+        auth, mock_client = _build_auth(app_client_id="current-cid")
+        mock_client.delete_user_pool_client.side_effect = _make_client_error("ResourceNotFoundException")
+        assert auth.delete_app_client(client_id="current-cid") is False
+
+# ---------------------------------------------------------------------------
 # create_customer_user
 # ---------------------------------------------------------------------------
 
