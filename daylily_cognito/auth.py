@@ -582,6 +582,70 @@ class CognitoAuth:
             LOGGER.error("Failed to delete user %s: %s", email, str(e))
             return False
 
+    def delete_app_client(
+        self,
+        *,
+        client_id: Optional[str] = None,
+        client_name: Optional[str] = None,
+    ) -> bool:
+        """Delete an app client from the configured user pool.
+
+        Resolution order for target client:
+        1. ``client_id`` argument
+        2. ``client_name`` argument (resolved via list_user_pool_clients)
+        3. ``self.app_client_id``
+
+        Args:
+            client_id: Optional explicit app client ID.
+            client_name: Optional app client name to resolve to an ID.
+
+        Returns:
+            True if deletion succeeds, False if not found or AWS call fails.
+
+        Raises:
+            ValueError: If user_pool_id is not configured, or no client target provided.
+        """
+        if not self.user_pool_id:
+            raise ValueError("user_pool_id is not set")
+
+        resolved_client_id = client_id
+        if not resolved_client_id and client_name:
+            try:
+                response = self.cognito.list_user_pool_clients(
+                    UserPoolId=self.user_pool_id,
+                    MaxResults=60,
+                )
+                for client in response.get("UserPoolClients", []):
+                    if client.get("ClientName") == client_name:
+                        resolved_client_id = str(client["ClientId"])
+                        break
+            except ClientError as e:
+                LOGGER.error("Failed to list app clients in pool %s: %s", self.user_pool_id, str(e))
+                return False
+
+            if not resolved_client_id:
+                LOGGER.warning("App client name not found: %s", client_name)
+                return False
+
+        if not resolved_client_id:
+            resolved_client_id = self.app_client_id
+
+        if not resolved_client_id:
+            raise ValueError("client_id, client_name, or self.app_client_id must be set")
+
+        try:
+            self.cognito.delete_user_pool_client(
+                UserPoolId=self.user_pool_id,
+                ClientId=resolved_client_id,
+            )
+            LOGGER.info("Deleted app client %s", resolved_client_id)
+            if resolved_client_id == self.app_client_id:
+                self.app_client_id = ""
+            return True
+        except ClientError as e:
+            LOGGER.error("Failed to delete app client %s: %s", resolved_client_id, str(e))
+            return False
+
     def set_user_password(self, email: str, password: str, *, permanent: bool) -> None:
         """Admin-set a user's password.
 
