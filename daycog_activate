@@ -80,13 +80,25 @@ if [ "${DAYCOG_INSTALL_COMPLETION:-1}" = "1" ]; then
   fi
 fi
 
-# If a default config exists, load it into the current shell environment.
-if [ -f "$HOME/.config/daycog/default.env" ]; then
-  # shellcheck disable=SC1090
-  set -a
-  . "$HOME/.config/daycog/default.env"
-  set +a
-fi
+_daycog_load_active_context() {
+  if [ -f "$HOME/.config/daycog/config.yaml" ]; then
+    _DAYCOG_EXPORTS="$(python - <<'PY'
+from daylily_cognito.config import get_context_values
+for key, value in sorted(get_context_values().items()):
+    if value:
+        escaped = str(value).replace('"', '\\"')
+        print(f'export {key}="{escaped}"')
+PY
+)"
+    if [ -n "$_DAYCOG_EXPORTS" ]; then
+      eval "$_DAYCOG_EXPORTS"
+    fi
+    unset _DAYCOG_EXPORTS
+    return 0
+  fi
+}
+
+_daycog_load_active_context
 
 # Wrap daycog so `daycog setup` can update the caller shell environment.
 daycog() {
@@ -99,12 +111,7 @@ daycog() {
       if [ -n "$_DAYCOG_EXPORTS" ]; then
         eval "$_DAYCOG_EXPORTS"
       fi
-      if [ -f "$HOME/.config/daycog/default.env" ]; then
-        # shellcheck disable=SC1090
-        set -a
-        . "$HOME/.config/daycog/default.env"
-        set +a
-      fi
+      _daycog_load_active_context
     fi
     _DAYCOG_RETURN_RC=$_DAYCOG_SETUP_RC
     _DAYCOG_FINAL_RC=$_DAYCOG_RETURN_RC

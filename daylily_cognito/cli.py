@@ -17,7 +17,16 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from .config import CognitoConfig
+from .config import (
+    CognitoConfig,
+    delete_context,
+    get_active_context_name,
+    get_config_store_path,
+    get_context_values,
+    list_context_values,
+    save_context_values,
+    set_active_context,
+)
 
 cognito_app = typer.Typer(help="Cognito authentication management commands")
 config_app = typer.Typer(help="Manage persisted daycog CLI configuration")
@@ -45,9 +54,9 @@ cognito_app.callback()(_app_callback)
 cognito_app.add_typer(config_app, name="config")
 
 
-def _default_config_path() -> Path:
-    """Return the default daycog config file path."""
-    return Path.home() / ".config" / "daycog" / "default.env"
+def _config_store_path() -> Path:
+    """Return the canonical Daycog config store path."""
+    return get_config_store_path()
 
 
 def _config_dir() -> Path:
@@ -55,9 +64,9 @@ def _config_dir() -> Path:
     return Path.home() / ".config" / "daycog"
 
 
-def _pool_config_path(pool_key: str, region: str) -> Path:
-    """Return the per-pool config file path, scoped by region."""
-    return _config_dir() / f"{pool_key}.{region}.env"
+def _pool_context_name(pool_key: str, region: str) -> str:
+    """Return the stored pool-context name, scoped by region."""
+    return f"{pool_key}.{region}"
 
 
 def _sanitize_filename_part(value: str) -> str:
@@ -65,101 +74,95 @@ def _sanitize_filename_part(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "-", value).strip("-") or "app"
 
 
-def _app_config_path(pool_key: str, region: str, client_name: str) -> Path:
-    """Return per-app config file path for a pool/region."""
+def _app_context_name(pool_key: str, region: str, client_name: str) -> str:
+    """Return the app-scoped context name for a pool/region."""
     safe_client = _sanitize_filename_part(client_name)
-    return _config_dir() / f"{pool_key}.{region}.{safe_client}.env"
+    return f"{pool_key}.{region}.{safe_client}"
 
 
-def _config_file_targets(
+def _context_targets(
     pool_id: str,
     region: str,
     *,
     pool_name: Optional[str] = None,
     client_name: Optional[str] = None,
-) -> tuple[Path, List[Path]]:
-    """Return canonical config path and legacy path variants for a pool or app file."""
-    primary_path = (
-        _app_config_path(pool_id, region, client_name)
+) -> tuple[str, List[str]]:
+    """Return canonical context name and alternate variants for a pool or app context."""
+    primary_name = (
+        _app_context_name(pool_id, region, client_name)
         if client_name
-        else _pool_config_path(pool_id, region)
+        else _pool_context_name(pool_id, region)
     )
-    legacy_paths: List[Path] = []
+    legacy_names: List[str] = []
     if pool_name and pool_name != pool_id:
-        legacy_paths.append(
-            _app_config_path(pool_name, region, client_name)
+        legacy_names.append(
+            _app_context_name(pool_name, region, client_name)
             if client_name
-            else _pool_config_path(pool_name, region)
+            else _pool_context_name(pool_name, region)
         )
-    return primary_path, legacy_paths
+    return primary_name, legacy_names
 
 
-def _existing_config_paths(primary_path: Path, legacy_paths: Optional[List[Path]] = None) -> List[Path]:
-    """Return existing canonical or legacy config files for a target."""
-    paths = [primary_path]
-    if legacy_paths:
-        paths.extend(legacy_paths)
-    return [path for path in paths if path.exists()]
+def _existing_context_names(primary_name: str, legacy_names: Optional[List[str]] = None) -> List[str]:
+    """Return existing canonical or alternate context names for a target."""
+    contexts = list_context_values()
+    names = [primary_name]
+    if legacy_names:
+        names.extend(legacy_names)
+    return [name for name in names if name in contexts]
 
 
-def _remove_config_files(paths: List[Path]) -> List[Path]:
-    """Remove config files if present and return removed paths."""
-    removed: List[Path] = []
-    for path in paths:
-        if not path.exists():
-            continue
-        try:
-            path.unlink()
-            removed.append(path)
-        except Exception:
-            pass
+def _remove_contexts(names: List[str]) -> List[str]:
+    """Remove stored contexts if present and return removed context names."""
+    removed: List[str] = []
+    for name in names:
+        if delete_context(name):
+            removed.append(name)
     return removed
 
 
-def _write_config_file(
-    primary_path: Path,
+def _write_context(
+    primary_name: str,
     values: Dict[str, str],
     *,
-    legacy_paths: Optional[List[Path]] = None,
+    legacy_names: Optional[List[str]] = None,
+    set_active: bool = False,
     skip_existing: bool = False,
-) -> tuple[bool, List[Path]]:
-    """Write config values, seeding from legacy files and removing migrated legacy paths."""
-    legacy_paths = legacy_paths or []
-    existing_legacy = [path for path in legacy_paths if path.exists()]
+) -> tuple[bool, List[str]]:
+    """Write context values, seeding from alternate contexts and pruning migrated aliases."""
+    legacy_names = legacy_names or []
+    existing_legacy = [name for name in legacy_names if get_context_values(name)]
+    existing_primary = get_context_values(primary_name)
 
-    if skip_existing and primary_path.exists() and not existing_legacy:
+    if skip_existing and existing_primary and not existing_legacy:
         return False, []
 
     merged: Dict[str, str] = {}
-    for path in existing_legacy:
-        merged.update(_read_env_file(path))
-    merged.update(_read_env_file(primary_path))
+    for name in existing_legacy:
+        merged.update(get_context_values(name))
+    merged.update(existing_primary)
     merged.update(values)
-    _write_env_file(primary_path, merged)
+    save_context_values(primary_name, merged, set_active=set_active)
 
-    removed = _remove_config_files(existing_legacy)
+    removed = _remove_contexts(existing_legacy)
     return True, removed
 
 
-def _cleanup_pool_config_files(pool_name: str, region: str, pool_id: str) -> List[Path]:
-    """Delete config files for a deleted pool and return removed paths."""
-    removed: List[Path] = []
-    cfg_dir = _config_dir()
-    if cfg_dir.exists():
-        for key in {pool_name, pool_id}:
-            for path in cfg_dir.glob(f"{key}.{region}*.env"):
-                if path not in removed:
-                    removed.extend(_remove_config_files([path]))
-
-    default_path = _default_config_path()
-    default_values = _read_env_file(default_path)
-    if default_path.exists() and default_values.get("COGNITO_USER_POOL_ID") == pool_id:
-        try:
-            default_path.unlink()
-            removed.append(default_path)
-        except Exception:
-            pass
-
+def _cleanup_pool_contexts(pool_name: str, region: str, pool_id: str) -> List[str]:
+    """Delete stored contexts for a deleted pool and return removed context names."""
+    removed: List[str] = []
+    active_name = get_active_context_name()
+    contexts = list_context_values()
+    prefixes = {
+        f"{pool_name}.{region}",
+        f"{pool_id}.{region}",
+    }
+    for name, values in contexts.items():
+        if any(name == prefix or name.startswith(f"{prefix}.") for prefix in prefixes):
+            if name not in removed:
+                removed.extend(_remove_contexts([name]))
+        elif active_name == name and values.get("COGNITO_USER_POOL_ID") == pool_id:
+            removed.extend(_remove_contexts([name]))
     return removed
 
 
@@ -352,7 +355,7 @@ def _describe_client(
     client_name: Optional[str] = None,
     client_id: Optional[str] = None,
 ) -> Dict[str, str]:
-    """Describe an app client and normalize values needed for env files."""
+    """Describe an app client and normalize values needed for stored contexts."""
     found = _find_client(cognito, pool_id, client_name=client_name, client_id=client_id)
     client_cfg = cognito.describe_user_pool_client(UserPoolId=pool_id, ClientId=found["client_id"])["UserPoolClient"]
     callback_urls = client_cfg.get("CallbackURLs", [])
@@ -400,30 +403,9 @@ def _select_config_client(
     raise typer.Exit(1)
 
 
-def _read_env_file(path: Path) -> Dict[str, str]:
-    """Read simple KEY=VALUE lines from a config file."""
-    values: Dict[str, str] = {}
-    if not path.exists():
-        return values
-
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip()
-        if key:
-            values[key] = value
-    return values
-
-
-def _write_env_file(path: Path, values: Dict[str, str]) -> None:
-    """Write env config values to disk in stable key order."""
-    lines = _render_env_lines(values)
-    contents = "\n".join(lines) + ("\n" if lines else "")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(contents, encoding="utf-8")
+def _read_context(name: str) -> Dict[str, str]:
+    """Read a stored Daycog context from the YAML config store."""
+    return get_context_values(name)
 
 
 def _render_env_lines(values: Dict[str, str]) -> List[str]:
@@ -491,19 +473,23 @@ def _build_pool_details(
     return details
 
 
-def _print_config_file(path: Path) -> None:
-    """Print a config file path and contents."""
-    console.print(str(path))
-    if path.exists():
-        console.print(path.read_text(encoding="utf-8"), end="")
+def _print_context(name: str) -> None:
+    """Print a Daycog context name and contents from the YAML config store."""
+    console.print(f"{_config_store_path()} :: {name}")
+    values = _read_context(name)
+    lines = _render_env_lines(values)
+    if lines:
+        console.print("\n".join(lines))
 
 
-def _resolve_pool_print_path(pool_name: str, region: str, profile: Optional[str] = None) -> Path:
-    """Resolve the most appropriate pool config path when given a pool name."""
-    legacy_path = _pool_config_path(pool_name, region)
+def _resolve_pool_print_context_name(
+    pool_name: str, region: str, profile: Optional[str] = None
+) -> str:
+    """Resolve the most appropriate pool context name when given a pool name."""
+    legacy_name = _pool_context_name(pool_name, region)
     resolved_profile = profile or os.environ.get("AWS_PROFILE")
     if not resolved_profile:
-        return legacy_path
+        return legacy_name
 
     try:
         import boto3
@@ -511,13 +497,13 @@ def _resolve_pool_print_path(pool_name: str, region: str, profile: Optional[str]
         session = boto3.Session(profile_name=resolved_profile, region_name=region)
         cognito = session.client("cognito-idp")
         pool = _resolve_pool(cognito, pool_name=pool_name)
-        canonical_path = _pool_config_path(pool["pool_id"], region)
-        if canonical_path.exists() or not legacy_path.exists():
-            return canonical_path
+        canonical_name = _pool_context_name(pool["pool_id"], region)
+        if get_context_values(canonical_name) or not get_context_values(legacy_name):
+            return canonical_name
     except Exception:
         pass
 
-    return legacy_path
+    return legacy_name
 
 
 def _collect_known_cli_values() -> Dict[str, str]:
@@ -834,36 +820,41 @@ def setup(
             setup_values["COGNITO_LOGOUT_URL"] = logout_url
         if resolved_cognito_domain:
             setup_values["COGNITO_DOMAIN"] = resolved_cognito_domain
-        pool_config_path, pool_legacy_paths = _config_file_targets(
+        pool_context_name, pool_legacy_names = _context_targets(
             pool_id,
             resolved_region,
             pool_name=pool_name,
         )
-        app_config_path, app_legacy_paths = _config_file_targets(
+        app_context_name, app_legacy_names = _context_targets(
             pool_id,
             resolved_region,
             pool_name=pool_name,
             client_name=resolved_client_name,
         )
-        default_config_path = _default_config_path()
+        if _existing_context_names(pool_context_name, pool_legacy_names):
+            console.print(
+                f"[yellow]⚠[/yellow]  Context already exists in {_config_store_path()}, updating: "
+                f"{pool_context_name}"
+            )
+        if _existing_context_names(app_context_name, app_legacy_names):
+            console.print(
+                f"[yellow]⚠[/yellow]  Context already exists in {_config_store_path()}, updating: "
+                f"{app_context_name}"
+            )
 
-        if _existing_config_paths(pool_config_path, pool_legacy_paths):
-            console.print(f"[yellow]⚠[/yellow]  Config file already exists, updating: {pool_config_path}")
-        if _existing_config_paths(app_config_path, app_legacy_paths):
-            console.print(f"[yellow]⚠[/yellow]  Config file already exists, updating: {app_config_path}")
-        if default_config_path.exists():
-            console.print(f"[yellow]⚠[/yellow]  Config file already exists, updating: {default_config_path}")
-
-        _write_config_file(pool_config_path, setup_values, legacy_paths=pool_legacy_paths)
-        _write_config_file(app_config_path, setup_values, legacy_paths=app_legacy_paths)
-        _write_config_file(default_config_path, setup_values)
+        _write_context(pool_context_name, setup_values, legacy_names=pool_legacy_names)
+        _write_context(
+            app_context_name,
+            setup_values,
+            legacy_names=app_legacy_names,
+            set_active=True,
+        )
 
         console.print("\n[green]✓[/green]  Cognito setup complete")
-        console.print("\nSaved config files:")
-        console.print(f"   [cyan]{pool_config_path}[/cyan]")
-        console.print(f"   [cyan]{app_config_path}[/cyan] [dim](app)[/dim]")
-        console.print(f"   [cyan]{default_config_path}[/cyan] [dim](default)[/dim]")
-        console.print("\nValues written to default config:")
+        console.print(f"\nSaved Daycog contexts in [cyan]{_config_store_path()}[/cyan]:")
+        console.print(f"   [cyan]{pool_context_name}[/cyan]")
+        console.print(f"   [cyan]{app_context_name}[/cyan] [dim](app, active)[/dim]")
+        console.print("\nValues written to the active Daycog context:")
         console.print(f"   [cyan]COGNITO_USER_POOL_ID={pool_id}[/cyan]")
         console.print(f"   [cyan]COGNITO_APP_CLIENT_ID={client_id}[/cyan]")
         console.print(f"   [cyan]COGNITO_CALLBACK_URL={resolved_callback_url}[/cyan]")
@@ -893,13 +884,13 @@ def setup(
 @config_app.command("print")
 def config_print(
     pool_name: Optional[str] = typer.Option(
-        None, "--pool-name", "--poor-name", help="Pool name for per-pool config file"
+        None, "--pool-name", "--poor-name", help="Pool name for a stored Daycog context"
     ),
-    pool_id: Optional[str] = typer.Option(None, "--pool-id", help="Pool ID for per-pool config file"),
+    pool_id: Optional[str] = typer.Option(None, "--pool-id", help="Pool ID for a stored Daycog context"),
     profile: Optional[str] = typer.Option(None, "--profile", help="AWS profile to use when resolving pool names"),
-    region: Optional[str] = typer.Option(None, "--region", help="AWS region for per-pool config file"),
+    region: Optional[str] = typer.Option(None, "--region", help="AWS region for a stored Daycog context"),
 ) -> None:
-    """Print config file path and file contents."""
+    """Print the resolved Daycog context name and contents."""
     if pool_name and pool_id:
         console.print("[red]✗[/red]  Provide only one of: --pool-name or --pool-id")
         raise typer.Exit(1)
@@ -907,12 +898,15 @@ def config_print(
         console.print("[red]✗[/red]  --region is required when using --pool-name or --pool-id")
         raise typer.Exit(1)
     if pool_id:
-        config_path = _pool_config_path(pool_id, region or "")
+        context_name = _pool_context_name(pool_id, region or "")
     elif pool_name:
-        config_path = _resolve_pool_print_path(pool_name, region or "", profile=profile)
+        context_name = _resolve_pool_print_context_name(pool_name, region or "", profile=profile)
     else:
-        config_path = _default_config_path()
-    _print_config_file(config_path)
+        context_name = get_active_context_name()
+        if not context_name:
+            console.print("[red]✗[/red]  No active Daycog context is set")
+            raise typer.Exit(1)
+    _print_context(context_name)
 
 
 @config_app.command("create")
@@ -928,7 +922,7 @@ def config_create(
     profile: Optional[str] = typer.Option(None, "--profile", help="AWS profile to use"),
     region: Optional[str] = typer.Option(None, "--region", help="AWS region to use"),
 ) -> None:
-    """Create pool/app config files and update default config from AWS."""
+    """Create pool/app contexts and update the active context from AWS."""
     resolved_profile, resolved_region = _resolve_profile_region(profile, region)
     if client_name and client_id:
         console.print("[red]✗[/red]  Provide only one of: --client-name or --client-id")
@@ -959,42 +953,44 @@ def config_create(
         pool_details["logout_url"] = logout_url
     config_values = _build_config_values(resolved_profile, resolved_region, pool_details)
 
-    config_path, pool_legacy_paths = _config_file_targets(
+    pool_context_name, pool_legacy_names = _context_targets(
         pool["pool_id"],
         resolved_region,
         pool_name=pool["pool_name"],
     )
-    if config_path.exists():
-        console.print(f"[red]✗[/red]  Config file already exists: {config_path}")
+    if get_context_values(pool_context_name):
+        console.print(f"[red]✗[/red]  Context already exists: {pool_context_name}")
         raise typer.Exit(1)
 
-    app_path: Optional[Path] = None
-    app_legacy_paths: List[Path] = []
+    app_context_name: Optional[str] = None
+    app_legacy_names: List[str] = []
     selected_client_name = pool_details.get("client_name")
     if selected_client_name:
-        app_path, app_legacy_paths = _config_file_targets(
+        app_context_name, app_legacy_names = _context_targets(
             pool["pool_id"],
             resolved_region,
             pool_name=pool["pool_name"],
             client_name=selected_client_name,
         )
-        if app_path.exists():
-            console.print(f"[red]✗[/red]  Config file already exists: {app_path}")
+        if get_context_values(app_context_name):
+            console.print(f"[red]✗[/red]  Context already exists: {app_context_name}")
             raise typer.Exit(1)
 
-    _write_config_file(config_path, config_values, legacy_paths=pool_legacy_paths)
-    if app_path:
-        _write_config_file(app_path, config_values, legacy_paths=app_legacy_paths)
-
-    default_path = _default_config_path()
-    _write_config_file(default_path, config_values)
-
-    _print_config_file(config_path)
-    if app_path:
-        _print_config_file(app_path)
+    _write_context(pool_context_name, config_values, legacy_names=pool_legacy_names)
+    if app_context_name:
+        _write_context(
+            app_context_name,
+            config_values,
+            legacy_names=app_legacy_names,
+            set_active=True,
+        )
     else:
-        console.print("[yellow]⚠[/yellow]  Pool has no app clients; no app-scoped config file written")
-    _print_config_file(default_path)
+        console.print("[yellow]⚠[/yellow]  Pool has no app clients; no app-scoped context written")
+        set_active_context(pool_context_name)
+
+    _print_context(pool_context_name)
+    if app_context_name:
+        _print_context(app_context_name)
 
 
 @config_app.command("update")
@@ -1010,7 +1006,7 @@ def config_update(
     profile: Optional[str] = typer.Option(None, "--profile", help="AWS profile to use"),
     region: Optional[str] = typer.Option(None, "--region", help="AWS region to use"),
 ) -> None:
-    """Update pool/app config files and default config from AWS."""
+    """Update pool/app contexts and refresh the active context from AWS."""
     resolved_profile, resolved_region = _resolve_profile_region(profile, region)
     if client_name and client_id:
         console.print("[red]✗[/red]  Provide only one of: --client-name or --client-id")
@@ -1041,33 +1037,35 @@ def config_update(
         pool_details["logout_url"] = logout_url
     config_values = _build_config_values(resolved_profile, resolved_region, pool_details)
 
-    pool_path, pool_legacy_paths = _config_file_targets(
+    pool_context_name, pool_legacy_names = _context_targets(
         pool["pool_id"],
         resolved_region,
         pool_name=pool["pool_name"],
     )
-    _write_config_file(pool_path, config_values, legacy_paths=pool_legacy_paths)
+    _write_context(pool_context_name, config_values, legacy_names=pool_legacy_names)
 
-    app_path: Optional[Path] = None
+    app_context_name: Optional[str] = None
     selected_client_name = pool_details.get("client_name")
     if selected_client_name:
-        app_path, app_legacy_paths = _config_file_targets(
+        app_context_name, app_legacy_names = _context_targets(
             pool["pool_id"],
             resolved_region,
             pool_name=pool["pool_name"],
             client_name=selected_client_name,
         )
-        _write_config_file(app_path, config_values, legacy_paths=app_legacy_paths)
-
-    default_path = _default_config_path()
-    _write_config_file(default_path, config_values)
-
-    _print_config_file(pool_path)
-    if app_path:
-        _print_config_file(app_path)
+        _write_context(
+            app_context_name,
+            config_values,
+            legacy_names=app_legacy_names,
+            set_active=True,
+        )
     else:
-        console.print("[yellow]⚠[/yellow]  Pool has no app clients; no app-scoped config file written")
-    _print_config_file(default_path)
+        console.print("[yellow]⚠[/yellow]  Pool has no app clients; no app-scoped context written")
+        set_active_context(pool_context_name)
+
+    _print_context(pool_context_name)
+    if app_context_name:
+        _print_context(app_context_name)
 
 
 @config_app.command("create-all")
@@ -1079,12 +1077,12 @@ def config_create_all(
     default_client: Optional[str] = typer.Option(
         None,
         "--default-client",
-        help="Client name whose values should populate the pool file and default.env",
+        help="Client name whose values should populate the pool context and active Daycog context",
     ),
     profile: Optional[str] = typer.Option(None, "--profile", help="AWS profile to use"),
     region: Optional[str] = typer.Option(None, "--region", help="AWS region to use"),
 ) -> None:
-    """Create app-scoped config files for all clients in a pool."""
+    """Create app-scoped Daycog contexts for all clients in a pool."""
     resolved_profile, resolved_region = _resolve_profile_region(profile, region)
 
     try:
@@ -1111,22 +1109,22 @@ def config_create_all(
             resolved_region,
             _build_pool_details(pool, resolved_region, client_details),
         )
-        app_path, app_legacy_paths = _config_file_targets(
+        app_context_name, app_legacy_names = _context_targets(
             pool["pool_id"],
             resolved_region,
             pool_name=pool["pool_name"],
             client_name=client_details["client_name"],
         )
-        wrote, _ = _write_config_file(
-            app_path,
+        wrote, _ = _write_context(
+            app_context_name,
             config_values,
-            legacy_paths=app_legacy_paths,
+            legacy_names=app_legacy_names,
             skip_existing=True,
         )
         if wrote:
-            _print_config_file(app_path)
+            _print_context(app_context_name)
         else:
-            console.print(f"[yellow]⚠[/yellow]  Skipping existing config file: {app_path}")
+            console.print(f"[yellow]⚠[/yellow]  Skipping existing context: {app_context_name}")
 
     if default_client:
         selected_client = _describe_client(cognito, pool["pool_id"], client_name=default_client)
@@ -1135,16 +1133,19 @@ def config_create_all(
             resolved_region,
             _build_pool_details(pool, resolved_region, selected_client),
         )
-        pool_path, pool_legacy_paths = _config_file_targets(
+        pool_context_name, pool_legacy_names = _context_targets(
             pool["pool_id"],
             resolved_region,
             pool_name=pool["pool_name"],
         )
-        _write_config_file(pool_path, config_values, legacy_paths=pool_legacy_paths)
-        default_path = _default_config_path()
-        _write_config_file(default_path, config_values)
-        _print_config_file(pool_path)
-        _print_config_file(default_path)
+        _write_context(pool_context_name, config_values, legacy_names=pool_legacy_names)
+        _write_context(
+            _app_context_name(pool["pool_id"], resolved_region, default_client),
+            config_values,
+            set_active=True,
+        )
+        _print_context(pool_context_name)
+        _print_context(get_active_context_name())
 
 
 @cognito_app.command("list-pools")
@@ -1221,7 +1222,7 @@ def add_app(
     oauth_flows: str = typer.Option("code", "--oauth-flows", help="Comma-separated OAuth flows"),
     scopes: str = typer.Option("openid,email,profile", "--scopes", help="Comma-separated OAuth scopes"),
     idps: str = typer.Option("COGNITO", "--idp", help="Comma-separated identity providers"),
-    set_default: bool = typer.Option(False, "--set-default", help="Also update pool/default env files to this app"),
+    set_default: bool = typer.Option(False, "--set-default", help="Also update the pool context and active Daycog context to this app"),
 ) -> None:
     """Add a new app client to an existing pool."""
     resolved_profile, resolved_region = _resolve_profile_region(profile, region)
@@ -1272,27 +1273,29 @@ def add_app(
         if logout_url:
             app_values["COGNITO_LOGOUT_URL"] = logout_url
 
-        app_path, app_legacy_paths = _config_file_targets(
+        app_context_name, app_legacy_names = _context_targets(
             pool_id,
             resolved_region,
             pool_name=pool_name,
             client_name=app_name,
         )
-        _write_config_file(app_path, app_values, legacy_paths=app_legacy_paths)
+        _write_context(
+            app_context_name,
+            app_values,
+            legacy_names=app_legacy_names,
+            set_active=set_default,
+        )
 
         if set_default:
-            pool_path, pool_legacy_paths = _config_file_targets(
+            pool_context_name, pool_legacy_names = _context_targets(
                 pool_id,
                 resolved_region,
                 pool_name=pool_name,
             )
-            _write_config_file(pool_path, app_values, legacy_paths=pool_legacy_paths)
-
-            default_path = _default_config_path()
-            _write_config_file(default_path, app_values)
+            _write_context(pool_context_name, app_values, legacy_names=pool_legacy_names)
 
         console.print(f"[green]✓[/green]  Created app client: {app_name} ({client_id})")
-        console.print(f"[cyan]{app_path}[/cyan]")
+        console.print(f"[cyan]{app_context_name}[/cyan] in [dim]{_config_store_path()}[/dim]")
     except Exception as e:
         console.print(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
@@ -1311,7 +1314,7 @@ def edit_app(
     oauth_flows: Optional[str] = typer.Option(None, "--oauth-flows", help="Comma-separated OAuth flows"),
     scopes: Optional[str] = typer.Option(None, "--scopes", help="Comma-separated OAuth scopes"),
     idps: Optional[str] = typer.Option(None, "--idp", help="Comma-separated identity providers"),
-    set_default: bool = typer.Option(False, "--set-default", help="Also update pool/default env files to this app"),
+    set_default: bool = typer.Option(False, "--set-default", help="Also update the pool context and active Daycog context to this app"),
 ) -> None:
     """Edit an existing app client in a pool."""
     if not app_name and not client_id:
@@ -1365,27 +1368,29 @@ def edit_app(
         if final_logout_urls:
             app_values["COGNITO_LOGOUT_URL"] = final_logout_urls[0]
 
-        app_path, app_legacy_paths = _config_file_targets(
+        app_context_name, app_legacy_names = _context_targets(
             pool_id,
             resolved_region,
             pool_name=pool_name,
             client_name=final_name,
         )
-        _write_config_file(app_path, app_values, legacy_paths=app_legacy_paths)
+        _write_context(
+            app_context_name,
+            app_values,
+            legacy_names=app_legacy_names,
+            set_active=set_default,
+        )
 
         if set_default:
-            pool_path, pool_legacy_paths = _config_file_targets(
+            pool_context_name, pool_legacy_names = _context_targets(
                 pool_id,
                 resolved_region,
                 pool_name=pool_name,
             )
-            _write_config_file(pool_path, app_values, legacy_paths=pool_legacy_paths)
-
-            default_path = _default_config_path()
-            _write_config_file(default_path, app_values)
+            _write_context(pool_context_name, app_values, legacy_names=pool_legacy_names)
 
         console.print(f"[green]✓[/green]  Updated app client: {final_name} ({found['client_id']})")
-        console.print(f"[cyan]{app_path}[/cyan]")
+        console.print(f"[cyan]{app_context_name}[/cyan] in [dim]{_config_store_path()}[/dim]")
     except Exception as e:
         console.print(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
@@ -1399,7 +1404,7 @@ def remove_app(
     profile: Optional[str] = typer.Option(None, "--profile", help="AWS profile to use"),
     region: Optional[str] = typer.Option(None, "--region", help="AWS region to use"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
-    delete_config: bool = typer.Option(True, "--delete-config/--keep-config", help="Delete per-app env file"),
+    delete_config: bool = typer.Option(True, "--delete-config/--keep-config", help="Delete the app-scoped Daycog context"),
 ) -> None:
     """Remove an app client from a pool."""
     if not app_name and not client_id:
@@ -1427,16 +1432,16 @@ def remove_app(
         cognito.delete_user_pool_client(UserPoolId=pool_id, ClientId=found["client_id"])
         console.print(f"[green]✓[/green]  Deleted app client: {found['client_name']} ({found['client_id']})")
 
-        app_path, app_legacy_paths = _config_file_targets(
+        app_context_name, app_legacy_names = _context_targets(
             pool_id,
             resolved_region,
             pool_name=pool_name,
             client_name=found["client_name"],
         )
         if delete_config:
-            removed = _remove_config_files([app_path, *app_legacy_paths])
-            for path in removed:
-                console.print(f"[dim]Removed config file: {path}[/dim]")
+            removed = _remove_contexts([app_context_name, *app_legacy_names])
+            for name in removed:
+                console.print(f"[dim]Removed context: {name}[/dim]")
     except Exception as e:
         console.print(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
@@ -1684,9 +1689,13 @@ def delete_pool(
 
         cognito.delete_user_pool(UserPoolId=resolved_pool_id)
         console.print(f"[green]✓[/green]  Deleted Cognito pool: {resolved_pool_name} ({resolved_pool_id})")
-        removed_paths = _cleanup_pool_config_files(resolved_pool_name, resolved_region, resolved_pool_id)
-        for path in removed_paths:
-            console.print(f"[dim]Removed config file: {path}[/dim]")
+        removed_contexts = _cleanup_pool_contexts(
+            resolved_pool_name,
+            resolved_region,
+            resolved_pool_id,
+        )
+        for name in removed_contexts:
+            console.print(f"[dim]Removed context: {name}[/dim]")
     except Exception as e:
         console.print(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
