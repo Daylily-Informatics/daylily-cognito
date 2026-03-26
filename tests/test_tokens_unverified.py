@@ -11,9 +11,8 @@ import pytest
 
 # Skip all tests if jose is not available
 jose = pytest.importorskip("jose", reason="python-jose not installed")
-from jose import ExpiredSignatureError
-
 from fastapi import HTTPException
+from jose import ExpiredSignatureError
 
 from daylily_cognito.tokens import (
     decode_jwt_unverified,
