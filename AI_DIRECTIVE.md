@@ -89,7 +89,7 @@ daycog config create --pool-name <pool-name> --profile <profile> --region <regio
 daycog config update --pool-name <pool-name> --profile <profile> --region <region>
 ```
 
-`config create/update` query AWS for pool details and keep `default.env` aligned with the selected pool.
+`config create/update` query AWS for pool details, keep `default.env` aligned with the selected pool, and write the selected app file when a pool client exists.
 For pool-scoped print, region is required because filenames are region-scoped.
 If multiple app clients exist in a pool, the CLI uses the first client returned by AWS.
 

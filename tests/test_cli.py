@@ -338,12 +338,20 @@ class TestConfigCommand:
     @mock.patch("boto3.Session")
     def test_config_create_writes_and_prints_contents(self, mock_session_cls: mock.MagicMock, tmp_path) -> None:
         cfg_path = tmp_path / ".config" / "daycog" / "my-pool.us-east-1.env"
+        app_path = tmp_path / ".config" / "daycog" / "my-pool.us-east-1.web-app.env"
         default_path = tmp_path / ".config" / "daycog" / "default.env"
         mc = _mock_cognito_client()
         mock_paginator = mock.MagicMock()
         mock_paginator.paginate.return_value = [{"UserPools": [{"Name": "my-pool", "Id": "us-east-1_pool"}]}]
         mc.get_paginator.return_value = mock_paginator
-        mc.list_user_pool_clients.return_value = {"UserPoolClients": [{"ClientId": "client_123"}]}
+        mc.list_user_pool_clients.return_value = {"UserPoolClients": [{"ClientId": "client_123", "ClientName": "web-app"}]}
+        mc.describe_user_pool_client.return_value = {
+            "UserPoolClient": {
+                "ClientName": "web-app",
+                "CallbackURLs": ["http://localhost:8001/callback"],
+                "LogoutURLs": ["http://localhost:8001/logout"],
+            }
+        }
         mock_session = mock.MagicMock()
         mock_session.client.return_value = mc
         mock_session_cls.return_value = mock_session
@@ -354,12 +362,16 @@ class TestConfigCommand:
         assert result.exit_code == 0
         normalized = result.output.replace("\n", "")
         assert str(cfg_path) in normalized
+        assert str(app_path) in normalized
         assert str(default_path) in normalized
         assert "AWS_PROFILE=dev-prof" in result.output
         assert "AWS_REGION=us-east-1" in result.output
         assert "COGNITO_USER_POOL_ID=us-east-1_pool" in result.output
         assert "COGNITO_APP_CLIENT_ID=client_123" in result.output
+        assert "COGNITO_CLIENT_NAME=web-app" in result.output
+        assert "COGNITO_CALLBACK_URL=http://localhost:8001/callback" in result.output
         assert cfg_path.exists()
+        assert app_path.exists()
         assert default_path.exists()
         mock_session_cls.assert_called_once_with(profile_name="dev-prof", region_name="us-east-1")
 
@@ -376,6 +388,7 @@ class TestConfigCommand:
         self, mock_session_cls: mock.MagicMock, tmp_path
     ) -> None:
         pool_path = tmp_path / ".config" / "daycog" / "my-pool.us-west-2.env"
+        app_path = tmp_path / ".config" / "daycog" / "my-pool.us-west-2.web-app.env"
         default_path = tmp_path / ".config" / "daycog" / "default.env"
         pool_path.parent.mkdir(parents=True, exist_ok=True)
         pool_path.write_text("GOOGLE_CLIENT_ID=keepme\n", encoding="utf-8")
@@ -385,7 +398,15 @@ class TestConfigCommand:
         mock_paginator = mock.MagicMock()
         mock_paginator.paginate.return_value = [{"UserPools": [{"Name": "my-pool", "Id": "us-west-2_pool"}]}]
         mc.get_paginator.return_value = mock_paginator
-        mc.list_user_pool_clients.return_value = {"UserPoolClients": [{"ClientId": "updated-client"}]}
+        mc.list_user_pool_clients.return_value = {
+            "UserPoolClients": [{"ClientId": "updated-client", "ClientName": "web-app"}]
+        }
+        mc.describe_user_pool_client.return_value = {
+            "UserPoolClient": {
+                "ClientName": "web-app",
+                "CallbackURLs": ["http://localhost:8001/callback"],
+            }
+        }
         mock_session = mock.MagicMock()
         mock_session.client.return_value = mc
         mock_session_cls.return_value = mock_session
@@ -398,9 +419,14 @@ class TestConfigCommand:
         default_content = default_path.read_text(encoding="utf-8")
         assert "COGNITO_USER_POOL_ID=us-west-2_pool" in pool_content
         assert "COGNITO_APP_CLIENT_ID=updated-client" in pool_content
+        assert "COGNITO_CLIENT_NAME=web-app" in pool_content
         assert "AWS_PROFILE=new-prof" in pool_content
         assert "AWS_REGION=us-west-2" in pool_content
         assert "GOOGLE_CLIENT_ID=keepme" in pool_content
+        app_content = app_path.read_text(encoding="utf-8")
+        assert "COGNITO_APP_CLIENT_ID=updated-client" in app_content
+        assert "COGNITO_CLIENT_NAME=web-app" in app_content
+        assert "COGNITO_CALLBACK_URL=http://localhost:8001/callback" in app_content
         assert "COGNITO_DOMAIN=example-domain" in default_content
         assert "COGNITO_USER_POOL_ID=us-west-2_pool" in default_content
 

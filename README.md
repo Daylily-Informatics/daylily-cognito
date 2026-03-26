@@ -258,10 +258,10 @@ daycog config print
 # Print specific pool config path and contents
 daycog config print --pool-name my-pool --region us-east-1
 
-# Create per-pool config from AWS and update default config
+# Create pool/app config from AWS and update default config
 daycog config create --pool-name my-pool --profile my-aws-profile --region us-east-1
 
-# Update per-pool config from AWS and update default config
+# Update pool/app config from AWS and update default config
 daycog config update --pool-name my-pool --profile my-aws-profile --region us-east-1
 ```
 
@@ -283,6 +283,7 @@ daycog --config DEV list-users
 ```
 
 Note: `daycog config create/update` use AWS lookups with `--profile`/`--region` (or `AWS_*`) and are separate from `--config NAME`.
+If a pool has app clients, `config create/update` sync the selected app into pool/default config and write `~/.config/daycog/<pool>.<region>.<app>.env`.
 If a pool has multiple app clients, `config create/update` use the first client returned by AWS.
 When using `config print --pool-name`, `--region` is required to resolve the region-scoped file name.
 

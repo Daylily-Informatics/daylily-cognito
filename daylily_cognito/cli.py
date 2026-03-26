@@ -197,24 +197,66 @@ def _resolve_google_client_details(
     return resolved_id, resolved_secret
 
 
+def _resolve_cognito_domain(pool_info: Dict[str, Any], region: str) -> str:
+    """Resolve a hosted UI domain hostname from pool details."""
+    domain_prefix = pool_info.get("Domain")
+    if domain_prefix:
+        return f"{domain_prefix}.auth.{region}.amazoncognito.com"
+
+    custom_domain = pool_info.get("CustomDomain")
+    if isinstance(custom_domain, str):
+        return custom_domain
+
+    if isinstance(custom_domain, dict):
+        custom_domain_name = custom_domain.get("DomainName")
+        if custom_domain_name:
+            return custom_domain_name
+
+    return ""
+
+
 def _get_pool_details_by_name(pool_name: str, profile: str, region: str) -> Dict[str, str]:
-    """Look up pool and a client ID by pool name."""
+    """Look up pool and selected app details by pool name."""
     import boto3
 
     session = boto3.Session(profile_name=profile, region_name=region)
     cognito = session.client("cognito-idp")
 
     pool_id = _find_pool_id_by_name(cognito, pool_name)
+    pool_info = cognito.describe_user_pool(UserPoolId=pool_id)["UserPool"]
     clients_resp = cognito.list_user_pool_clients(UserPoolId=pool_id, MaxResults=60)
     clients = clients_resp.get("UserPoolClients", [])
-    client_id = clients[0]["ClientId"] if clients else ""
+    selected_client = clients[0] if clients else None
 
     if len(clients) > 1:
         console.print(
-            f"[yellow]⚠[/yellow]  Pool has {len(clients)} app clients; using first: {client_id}"
+            f"[yellow]⚠[/yellow]  Pool has {len(clients)} app clients; using first: {selected_client['ClientId']}"
         )
 
-    return {"pool_id": pool_id, "client_id": client_id}
+    details = {"pool_id": pool_id}
+
+    cognito_domain = _resolve_cognito_domain(pool_info, region)
+    if cognito_domain:
+        details["cognito_domain"] = cognito_domain
+
+    if not selected_client:
+        return details
+
+    client_id = selected_client["ClientId"]
+    client_cfg = cognito.describe_user_pool_client(UserPoolId=pool_id, ClientId=client_id)["UserPoolClient"]
+    callback_urls = client_cfg.get("CallbackURLs", [])
+    logout_urls = client_cfg.get("LogoutURLs", [])
+    client_name = selected_client.get("ClientName") or client_cfg.get("ClientName", "")
+
+    details["client_id"] = client_id
+    if client_name:
+        details["client_name"] = client_name
+    if callback_urls:
+        details["callback_url"] = callback_urls[0]
+    if logout_urls:
+        details["logout_url"] = logout_urls[0]
+
+    return details
 
 
 def _find_pool_id_by_name(cognito: Any, pool_name: str) -> str:
@@ -300,6 +342,37 @@ def _render_env_lines(values: Dict[str, str]) -> List[str]:
         if value:
             lines.append(f"{key}={value}")
     return lines
+
+
+def _build_config_values(profile: str, region: str, pool_details: Dict[str, str]) -> Dict[str, str]:
+    """Build env values from AWS-resolved pool and app details."""
+    config_values = {
+        "AWS_PROFILE": profile,
+        "AWS_REGION": region,
+        "COGNITO_REGION": region,
+        "COGNITO_USER_POOL_ID": pool_details["pool_id"],
+    }
+
+    optional_keys = {
+        "client_id": "COGNITO_APP_CLIENT_ID",
+        "client_name": "COGNITO_CLIENT_NAME",
+        "callback_url": "COGNITO_CALLBACK_URL",
+        "logout_url": "COGNITO_LOGOUT_URL",
+        "cognito_domain": "COGNITO_DOMAIN",
+    }
+    for source_key, target_key in optional_keys.items():
+        value = pool_details.get(source_key)
+        if value:
+            config_values[target_key] = value
+
+    return config_values
+
+
+def _print_config_file(path: Path) -> None:
+    """Print a config file path and contents."""
+    console.print(str(path))
+    if path.exists():
+        console.print(path.read_text(encoding="utf-8"), end="")
 
 
 def _collect_known_cli_values() -> Dict[str, str]:
@@ -683,11 +756,7 @@ def config_print(
         console.print("[red]✗[/red]  --region is required when using --pool-name")
         raise typer.Exit(1)
     config_path = _pool_config_path(pool_name, region) if pool_name else _default_config_path()
-    console.print(str(config_path))
-    if config_path.exists():
-        contents = config_path.read_text(encoding="utf-8")
-        if contents:
-            console.print(contents, end="")
+    _print_config_file(config_path)
 
 
 @config_app.command("create")
@@ -696,34 +765,39 @@ def config_create(
     profile: Optional[str] = typer.Option(None, "--profile", help="AWS profile to use"),
     region: Optional[str] = typer.Option(None, "--region", help="AWS region to use"),
 ) -> None:
-    """Create the pool config file and update default config from AWS."""
+    """Create pool/app config files and update default config from AWS."""
     resolved_profile, resolved_region = _resolve_profile_region(profile, region)
     pool_details = _get_pool_details_by_name(pool_name, resolved_profile, resolved_region)
-
-    config_values = {
-        "AWS_PROFILE": resolved_profile,
-        "AWS_REGION": resolved_region,
-        "COGNITO_REGION": resolved_region,
-        "COGNITO_USER_POOL_ID": pool_details["pool_id"],
-    }
-    if pool_details["client_id"]:
-        config_values["COGNITO_APP_CLIENT_ID"] = pool_details["client_id"]
+    config_values = _build_config_values(resolved_profile, resolved_region, pool_details)
 
     config_path = _pool_config_path(pool_name, resolved_region)
     if config_path.exists():
         console.print(f"[red]✗[/red]  Config file already exists: {config_path}")
         raise typer.Exit(1)
+
+    app_path: Optional[Path] = None
+    client_name = pool_details.get("client_name")
+    if client_name:
+        app_path = _app_config_path(pool_name, resolved_region, client_name)
+        if app_path.exists():
+            console.print(f"[red]✗[/red]  Config file already exists: {app_path}")
+            raise typer.Exit(1)
+
     _write_env_file(config_path, config_values)
+    if app_path:
+        _write_env_file(app_path, config_values)
 
     default_path = _default_config_path()
     merged_default = _read_env_file(default_path)
     merged_default.update(config_values)
     _write_env_file(default_path, merged_default)
 
-    console.print(str(config_path))
-    console.print(config_path.read_text(encoding="utf-8"), end="")
-    console.print(str(default_path))
-    console.print(default_path.read_text(encoding="utf-8"), end="")
+    _print_config_file(config_path)
+    if app_path:
+        _print_config_file(app_path)
+    else:
+        console.print("[yellow]⚠[/yellow]  Pool has no app clients; no app-scoped config file written")
+    _print_config_file(default_path)
 
 
 @config_app.command("update")
@@ -732,33 +806,35 @@ def config_update(
     profile: Optional[str] = typer.Option(None, "--profile", help="AWS profile to use"),
     region: Optional[str] = typer.Option(None, "--region", help="AWS region to use"),
 ) -> None:
-    """Update the pool config file and default config from AWS."""
+    """Update pool/app config files and default config from AWS."""
     resolved_profile, resolved_region = _resolve_profile_region(profile, region)
     pool_details = _get_pool_details_by_name(pool_name, resolved_profile, resolved_region)
-
-    config_values = {
-        "AWS_PROFILE": resolved_profile,
-        "AWS_REGION": resolved_region,
-        "COGNITO_REGION": resolved_region,
-        "COGNITO_USER_POOL_ID": pool_details["pool_id"],
-    }
-    if pool_details["client_id"]:
-        config_values["COGNITO_APP_CLIENT_ID"] = pool_details["client_id"]
+    config_values = _build_config_values(resolved_profile, resolved_region, pool_details)
 
     pool_path = _pool_config_path(pool_name, resolved_region)
     merged_pool = _read_env_file(pool_path)
     merged_pool.update(config_values)
     _write_env_file(pool_path, merged_pool)
 
+    app_path: Optional[Path] = None
+    client_name = pool_details.get("client_name")
+    if client_name:
+        app_path = _app_config_path(pool_name, resolved_region, client_name)
+        merged_app = _read_env_file(app_path)
+        merged_app.update(config_values)
+        _write_env_file(app_path, merged_app)
+
     default_path = _default_config_path()
     merged_default = _read_env_file(default_path)
     merged_default.update(config_values)
     _write_env_file(default_path, merged_default)
 
-    console.print(str(pool_path))
-    console.print(pool_path.read_text(encoding="utf-8"), end="")
-    console.print(str(default_path))
-    console.print(default_path.read_text(encoding="utf-8"), end="")
+    _print_config_file(pool_path)
+    if app_path:
+        _print_config_file(app_path)
+    else:
+        console.print("[yellow]⚠[/yellow]  Pool has no app clients; no app-scoped config file written")
+    _print_config_file(default_path)
 
 
 @cognito_app.command("list-pools")
