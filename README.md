@@ -106,7 +106,7 @@ The `daycog` CLI is the operational interface for Cognito management in this rep
 Use the helper script so the venv/CLI are ready and shell env loading works:
 
 ```bash
-source ./daycog_activate
+source ./activate
 ```
 
 This script:
@@ -281,7 +281,7 @@ For a single pool with multiple app clients, Daycog stores:
 - App context: `<pool-id>.<region>.<app>`
   - App-specific client settings (`COGNITO_APP_CLIENT_ID`, callback/logout, etc.).
 - Active context
-  - The context loaded by `daycog_activate`.
+  - The context loaded by `activate`.
 
 `daycog setup` always writes the pool and app contexts and marks the app context active.
 `daycog add-app` / `daycog edit-app` always write the app context, and update pool/active context when `--set-default` is passed.

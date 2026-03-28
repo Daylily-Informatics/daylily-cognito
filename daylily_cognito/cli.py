@@ -474,13 +474,109 @@ def _build_pool_details(
     return details
 
 
-def _print_context(name: str) -> None:
-    """Print a Daycog context name and contents from the YAML config store."""
-    console.print(f"{_config_store_path()} :: {name}")
+def _context_payload(name: str) -> Dict[str, Any]:
+    """Return a machine-readable representation of a stored Daycog context."""
     values = _read_context(name)
-    lines = _render_env_lines(values)
+    return {
+        "config_store_path": str(_config_store_path()),
+        "context_name": name,
+        "values": values,
+    }
+
+
+def _print_context(name: str, *, as_json: bool = False) -> None:
+    """Print a Daycog context name and contents from the YAML config store."""
+    payload = _context_payload(name)
+    if as_json:
+        console.print_json(json=json.dumps(payload))
+        return
+
+    console.print(f"{payload['config_store_path']} :: {name}")
+    lines = _render_env_lines(payload["values"])
     if lines:
         console.print("\n".join(lines))
+
+
+def _resolve_context_name_for_print(
+    *,
+    pool_name: Optional[str],
+    pool_id: Optional[str],
+    region: Optional[str],
+    profile: Optional[str],
+    client_name: Optional[str],
+    client_id: Optional[str],
+) -> str:
+    """Resolve the stored pool/app context name for config-print operations."""
+    if client_name and client_id:
+        console.print("[red]✗[/red]  Provide only one of: --client-name or --client-id")
+        raise typer.Exit(1)
+
+    if pool_id:
+        pool_context_name = _pool_context_name(pool_id, region or "")
+    elif pool_name:
+        pool_context_name = _resolve_pool_print_context_name(
+            pool_name, region or "", profile=profile
+        )
+    else:
+        pool_context_name = get_active_context_name()
+        if not pool_context_name:
+            console.print("[red]✗[/red]  No active Daycog context is set")
+            raise typer.Exit(1)
+
+    if not client_name and not client_id:
+        return pool_context_name
+
+    pool_values = get_context_values(pool_context_name)
+    selected_pool_id = (
+        pool_id
+        or str(pool_values.get("COGNITO_USER_POOL_ID") or "").strip()
+        or (
+            pool_context_name.split(".", 2)[0].strip()
+            if region and pool_context_name.endswith(f".{region}")
+            else ""
+        )
+    ).strip()
+    selected_region = (
+        region
+        or str(pool_values.get("COGNITO_REGION") or "").strip()
+        or str(pool_values.get("AWS_REGION") or "").strip()
+    ).strip()
+    if not selected_pool_id or not selected_region:
+        console.print(
+            "[red]✗[/red]  Unable to resolve pool ID/region for the requested app context"
+        )
+        raise typer.Exit(1)
+
+    contexts = list_context_values()
+    matches: list[str] = []
+    for name, values in contexts.items():
+        if str(values.get("COGNITO_USER_POOL_ID") or "").strip() != selected_pool_id:
+            continue
+        context_region = (
+            str(values.get("COGNITO_REGION") or "").strip()
+            or str(values.get("AWS_REGION") or "").strip()
+        )
+        if context_region != selected_region:
+            continue
+        if client_name and str(values.get("COGNITO_CLIENT_NAME") or "").strip() != client_name:
+            continue
+        if client_id and str(values.get("COGNITO_APP_CLIENT_ID") or "").strip() != client_id:
+            continue
+        matches.append(name)
+
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        console.print("[red]✗[/red]  Multiple matching app contexts found:")
+        for match in sorted(matches):
+            console.print(f"   {match}")
+        raise typer.Exit(1)
+
+    if client_name:
+        return _app_context_name(selected_pool_id, selected_region, client_name)
+
+    console.print("[red]✗[/red]  No stored app context matches the requested client")
+    raise typer.Exit(1)
 
 
 def _resolve_pool_print_context_name(pool_name: str, region: str, profile: Optional[str] = None) -> str:
@@ -890,8 +986,15 @@ def config_print(
         None, "--pool-name", "--poor-name", help="Pool name for a stored Daycog context"
     ),
     pool_id: Optional[str] = typer.Option(None, "--pool-id", help="Pool ID for a stored Daycog context"),
+    client_name: Optional[str] = typer.Option(
+        None, "--client-name", help="App client name for a stored Daycog context"
+    ),
+    client_id: Optional[str] = typer.Option(
+        None, "--client-id", help="App client ID for a stored Daycog context"
+    ),
     profile: Optional[str] = typer.Option(None, "--profile", help="AWS profile to use when resolving pool names"),
     region: Optional[str] = typer.Option(None, "--region", help="AWS region for a stored Daycog context"),
+    as_json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
 ) -> None:
     """Print the resolved Daycog context name and contents."""
     if pool_name and pool_id:
@@ -900,16 +1003,15 @@ def config_print(
     if (pool_name or pool_id) and not region:
         console.print("[red]✗[/red]  --region is required when using --pool-name or --pool-id")
         raise typer.Exit(1)
-    if pool_id:
-        context_name = _pool_context_name(pool_id, region or "")
-    elif pool_name:
-        context_name = _resolve_pool_print_context_name(pool_name, region or "", profile=profile)
-    else:
-        context_name = get_active_context_name()
-        if not context_name:
-            console.print("[red]✗[/red]  No active Daycog context is set")
-            raise typer.Exit(1)
-    _print_context(context_name)
+    context_name = _resolve_context_name_for_print(
+        pool_name=pool_name,
+        pool_id=pool_id,
+        region=region,
+        profile=profile,
+        client_name=client_name,
+        client_id=client_id,
+    )
+    _print_context(context_name, as_json=as_json)
 
 
 @config_app.command("create")
