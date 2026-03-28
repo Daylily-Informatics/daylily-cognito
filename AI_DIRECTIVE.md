@@ -10,7 +10,7 @@ If asked to perform Cognito pool/user/client lifecycle actions, use `daycog` com
 From repo root, always start with:
 
 ```sh
-source ./daycog_activate
+source ./activate
 ```
 
 This prepares `.venv`, installs this repo editable, installs completion, and loads `~/.config/daycog/default.env` if present.

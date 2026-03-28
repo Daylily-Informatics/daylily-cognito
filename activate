@@ -7,7 +7,6 @@ if [ -n "${BASH_SOURCE:-}" ]; then
     _DAYCOG_SOURCED=1
   fi
 elif [ -n "${ZSH_VERSION:-}" ]; then
-  _DAYCOG_ZSH_SOURCE=$(eval 'printf %s "${(%):-%N}"')
   case "${ZSH_EVAL_CONTEXT:-}" in
     *:file|file)
       _DAYCOG_SOURCED=1
@@ -16,14 +15,14 @@ elif [ -n "${ZSH_VERSION:-}" ]; then
 fi
 
 if [ "$_DAYCOG_SOURCED" -ne 1 ]; then
-  echo "This script must be sourced: source daycog_activate" >&2
+  echo "This script must be sourced: source ./activate" >&2
   exit 1
 fi
 
 if [ -n "${BASH_SOURCE:-}" ]; then
   _DAYCOG_SOURCE=${BASH_SOURCE[0]}
 elif [ -n "${ZSH_VERSION:-}" ]; then
-  _DAYCOG_SOURCE=$_DAYCOG_ZSH_SOURCE
+  _DAYCOG_SOURCE=${(%):-%x}
 else
   _DAYCOG_SOURCE=$0
 fi
@@ -33,11 +32,27 @@ _DAYCOG_ACTIVATE_DIR=$(
 )
 
 if [ -z "$_DAYCOG_ACTIVATE_DIR" ]; then
-  echo "Could not determine repo directory for daycog_activate" >&2
+  echo "Could not determine repo directory for activate" >&2
   return 1
 fi
 
 _DAYCOG_VENV_DIR="$_DAYCOG_ACTIVATE_DIR/.venv"
+
+_daycog_module_is_from_repo() {
+  python - "$1" <<'PY' >/dev/null 2>&1
+import importlib
+import pathlib
+import sys
+
+repo_root = pathlib.Path(sys.argv[1]).resolve()
+module = importlib.import_module("daylily_cognito")
+module_file = getattr(module, "__file__", "")
+if not module_file:
+    raise SystemExit(1)
+module_path = pathlib.Path(module_file).resolve()
+raise SystemExit(0 if module_path == repo_root or repo_root in module_path.parents else 1)
+PY
+}
 
 if [ ! -x "$_DAYCOG_VENV_DIR/bin/python" ]; then
   echo "Creating virtual environment at $_DAYCOG_VENV_DIR"
@@ -57,18 +72,30 @@ if ! . "$_DAYCOG_VENV_DIR/bin/activate"; then
   return 1
 fi
 
-if ! python -c "import setuptools" >/dev/null 2>&1; then
-  echo "Installing setuptools/wheel required for editable install..."
-  if ! python -m pip install setuptools wheel; then
-    echo "Failed to install setuptools/wheel" >&2
-    return 1
-  fi
+echo "Ensuring pip/setuptools/wheel support editable installs..."
+if ! python -m pip install --upgrade pip setuptools wheel >/dev/null; then
+  echo "Failed to install pip/setuptools/wheel" >&2
+  return 1
 fi
 
-echo "Installing daylily-cognito in editable mode..."
-if ! python -m pip install --no-build-isolation -e "$_DAYCOG_ACTIVATE_DIR"; then
-  echo "Editable install failed" >&2
-  return 1
+_DAYCOG_NEEDS_INSTALL=0
+if ! _daycog_module_is_from_repo "$_DAYCOG_ACTIVATE_DIR"; then
+  _DAYCOG_NEEDS_INSTALL=1
+fi
+if ! python -c "import pytest" >/dev/null 2>&1; then
+  _DAYCOG_NEEDS_INSTALL=1
+fi
+
+if [ "$_DAYCOG_NEEDS_INSTALL" = "1" ]; then
+  echo "Installing daylily-cognito in editable mode..."
+  if ! python -m pip install --no-build-isolation -e "${_DAYCOG_ACTIVATE_DIR}[dev]"; then
+    echo "Editable install failed" >&2
+    return 1
+  fi
+  if ! _daycog_module_is_from_repo "$_DAYCOG_ACTIVATE_DIR"; then
+    echo "daylily-cognito still resolves outside $_DAYCOG_ACTIVATE_DIR" >&2
+    return 1
+  fi
 fi
 
 echo "daycog is ready: $(command -v daycog)"
@@ -129,4 +156,5 @@ unset _DAYCOG_ACTIVATE_DIR
 unset _DAYCOG_SOURCE
 unset _DAYCOG_SOURCED
 unset _DAYCOG_VENV_DIR
-unset _DAYCOG_ZSH_SOURCE
+unset _DAYCOG_NEEDS_INSTALL
+unset -f _daycog_module_is_from_repo

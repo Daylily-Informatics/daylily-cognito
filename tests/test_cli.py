@@ -881,6 +881,64 @@ class TestConfigCommand:
         assert "GOOGLE_CLIENT_ID=keepme" in app_content
         assert "COGNITO_CALLBACK_URL" not in app_content
 
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_config_print_json_uses_active_context(self, tmp_path) -> None:
+        _write_store(
+            tmp_path,
+            contexts={"active.us-west-2": {"AWS_PROFILE": "from-file", "AWS_REGION": "us-west-2"}},
+            active_context="active.us-west-2",
+        )
+
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            result = runner.invoke(cognito_app, ["config", "print", "--json"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload["config_store_path"] == str(_cfg_path(tmp_path))
+        assert payload["context_name"] == "active.us-west-2"
+        assert payload["values"]["AWS_PROFILE"] == "from-file"
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_config_print_json_selects_app_context_by_client_name(self, tmp_path) -> None:
+        _write_store(
+            tmp_path,
+            contexts={
+                "us-west-2_pool.us-west-2": {
+                    "COGNITO_USER_POOL_ID": "us-west-2_pool",
+                    "AWS_REGION": "us-west-2",
+                    "COGNITO_REGION": "us-west-2",
+                },
+                "us-west-2_pool.us-west-2.atlas": {
+                    "COGNITO_USER_POOL_ID": "us-west-2_pool",
+                    "COGNITO_APP_CLIENT_ID": "atlas-id",
+                    "COGNITO_CLIENT_NAME": "atlas",
+                    "AWS_REGION": "us-west-2",
+                    "COGNITO_REGION": "us-west-2",
+                },
+            },
+        )
+
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            result = runner.invoke(
+                cognito_app,
+                [
+                    "config",
+                    "print",
+                    "--pool-id",
+                    "us-west-2_pool",
+                    "--region",
+                    "us-west-2",
+                    "--client-name",
+                    "atlas",
+                    "--json",
+                ],
+            )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload["context_name"] == "us-west-2_pool.us-west-2.atlas"
+        assert payload["values"]["COGNITO_APP_CLIENT_ID"] == "atlas-id"
+
 
 # ---------------------------------------------------------------------------
 # list-pools
