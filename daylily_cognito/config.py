@@ -50,9 +50,7 @@ def list_context_values() -> dict[str, dict[str, str]]:
     for name, values in contexts.items():
         if not isinstance(values, dict):
             continue
-        normalized[str(name)] = {
-            str(key): str(value) for key, value in values.items() if value is not None
-        }
+        normalized[str(name)] = {str(key): str(value) for key, value in values.items() if value is not None}
     return normalized
 
 
@@ -146,22 +144,12 @@ class CognitoConfig:
         stored = get_context_values(name)
 
         region = os.environ.get(f"{env_prefix}REGION", stored.get("COGNITO_REGION", ""))
-        user_pool_id = os.environ.get(
-            f"{env_prefix}USER_POOL_ID", stored.get("COGNITO_USER_POOL_ID", "")
-        )
-        app_client_id = os.environ.get(
-            f"{env_prefix}APP_CLIENT_ID", stored.get("COGNITO_APP_CLIENT_ID", "")
-        )
+        user_pool_id = os.environ.get(f"{env_prefix}USER_POOL_ID", stored.get("COGNITO_USER_POOL_ID", ""))
+        app_client_id = os.environ.get(f"{env_prefix}APP_CLIENT_ID", stored.get("COGNITO_APP_CLIENT_ID", ""))
         aws_profile = os.environ.get(f"{env_prefix}AWS_PROFILE") or stored.get("AWS_PROFILE")
-        google_client_id = os.environ.get(f"{env_prefix}GOOGLE_CLIENT_ID") or stored.get(
-            "GOOGLE_CLIENT_ID"
-        )
-        google_client_secret = os.environ.get(
-            f"{env_prefix}GOOGLE_CLIENT_SECRET"
-        ) or stored.get("GOOGLE_CLIENT_SECRET")
-        cognito_domain = os.environ.get(f"{env_prefix}COGNITO_DOMAIN") or stored.get(
-            "COGNITO_DOMAIN"
-        )
+        google_client_id = os.environ.get(f"{env_prefix}GOOGLE_CLIENT_ID") or stored.get("GOOGLE_CLIENT_ID")
+        google_client_secret = os.environ.get(f"{env_prefix}GOOGLE_CLIENT_SECRET") or stored.get("GOOGLE_CLIENT_SECRET")
+        cognito_domain = os.environ.get(f"{env_prefix}COGNITO_DOMAIN") or stored.get("COGNITO_DOMAIN")
 
         config = cls(
             name=name,
@@ -219,9 +207,7 @@ class CognitoConfig:
 
         # Google OAuth (optional)
         google_client_id = os.environ.get("GOOGLE_CLIENT_ID") or stored.get("GOOGLE_CLIENT_ID")
-        google_client_secret = os.environ.get("GOOGLE_CLIENT_SECRET") or stored.get(
-            "GOOGLE_CLIENT_SECRET"
-        )
+        google_client_secret = os.environ.get("GOOGLE_CLIENT_SECRET") or stored.get("GOOGLE_CLIENT_SECRET")
         cognito_domain = os.environ.get("COGNITO_DOMAIN") or stored.get("COGNITO_DOMAIN")
 
         config = cls(

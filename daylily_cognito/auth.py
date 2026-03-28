@@ -16,6 +16,11 @@ from botocore.exceptions import ClientError
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
 
+from ._app_client_update import (
+    REQUIRED_AUTH_FLOWS,
+    build_user_pool_client_update_request,
+    merge_unique_strings,
+)
 from .fastapi import security
 from .jwks import JWKSCache
 
@@ -324,26 +329,18 @@ class CognitoAuth:
             raise ValueError("user_pool_id and app_client_id must be set")
 
         try:
-            # Get current client configuration
-            response = self.cognito.describe_user_pool_client(
-                UserPoolId=self.user_pool_id,
-                ClientId=self.app_client_id,
+            update_kwargs = build_user_pool_client_update_request(
+                self.cognito,
+                user_pool_id=self.user_pool_id,
+                client_id=self.app_client_id,
+                overrides={},
             )
-            client_config = response["UserPoolClient"]
-
-            # Update with required auth flows
-            self.cognito.update_user_pool_client(
-                UserPoolId=self.user_pool_id,
-                ClientId=self.app_client_id,
-                ClientName=client_config["ClientName"],
-                ExplicitAuthFlows=[
-                    "ALLOW_USER_PASSWORD_AUTH",
-                    "ALLOW_ADMIN_USER_PASSWORD_AUTH",
-                    "ALLOW_REFRESH_TOKEN_AUTH",
-                ],
-                ReadAttributes=client_config.get("ReadAttributes", ["email", "custom:customer_id"]),
-                WriteAttributes=client_config.get("WriteAttributes", ["email"]),
+            required_flows = merge_unique_strings(
+                update_kwargs.get("ExplicitAuthFlows", []),
+                REQUIRED_AUTH_FLOWS,
             )
+            update_kwargs["ExplicitAuthFlows"] = required_flows
+            self.cognito.update_user_pool_client(**update_kwargs)
             LOGGER.info(f"Updated app client {self.app_client_id} with required auth flows")
 
         except ClientError as e:
