@@ -1,6 +1,7 @@
 """Tests for CognitoConfig."""
 
 import os
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -162,7 +163,8 @@ class TestCognitoConfigFromLegacyEnv:
     def test_from_legacy_env_missing_vars(self) -> None:
         """Missing required vars raises ValueError."""
         env = {"COGNITO_REGION": "us-west-2"}
-        with mock.patch.dict(os.environ, env, clear=True):
-            with pytest.raises(ValueError) as exc_info:
-                CognitoConfig.from_legacy_env()
+        with mock.patch("pathlib.Path.home", return_value=Path("/tmp/nonexistent-daycog-home")):
+            with mock.patch.dict(os.environ, env, clear=True):
+                with pytest.raises(ValueError) as exc_info:
+                    CognitoConfig.from_legacy_env().validate()
         assert "COGNITO_USER_POOL_ID" in str(exc_info.value)
