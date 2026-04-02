@@ -88,7 +88,7 @@ fi
 
 if [ "$_DAYCOG_NEEDS_INSTALL" = "1" ]; then
   echo "Installing daylily-cognito in editable mode..."
-  if ! python -m pip install --no-build-isolation -e "${_DAYCOG_ACTIVATE_DIR}[dev]"; then
+  if ! python -m pip install --no-build-isolation -e "${_DAYCOG_ACTIVATE_DIR}[dev,auth]"; then
     echo "Editable install failed" >&2
     return 1
   fi
