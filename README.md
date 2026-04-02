@@ -9,6 +9,7 @@
 daylily-cognito owns:
 - reusable Cognito configuration objects
 - shared auth helpers for FastAPI integrations
+- shared Hosted UI browser-session helpers for cookie-backed web login
 - the `daycog` operational CLI for pool/app/user/group flows
 - Google IdP support and context/config synchronization
 
@@ -59,6 +60,128 @@ auth = CognitoAuth(
     app_client_id=config.app_client_id,
 )
 ```
+
+### Quickstart: Hosted UI Browser Sessions
+
+```python
+from typing import Optional
+
+from daylily_cognito import (
+    CognitoWebAuthError,
+    CognitoWebSessionConfig,
+    SessionPrincipal,
+    complete_cognito_callback,
+    configure_session_middleware,
+    load_session_principal,
+    start_cognito_login,
+)
+
+web_config = CognitoWebSessionConfig(
+    domain="myapp.auth.us-west-2.amazoncognito.com",
+    client_id="client-id",
+    redirect_uri="https://localhost:8912/auth/callback",
+    logout_uri="https://localhost:8912/auth/logout",
+    public_base_url="https://localhost:8912",
+    session_secret_key="change-me",
+    session_cookie_name="myapp_session",
+    server_instance_id="server-instance-1",
+)
+
+configure_session_middleware(app, web_config)
+
+@router.get("/auth/login")
+async def auth_login(request: Request):
+    return start_cognito_login(request, web_config, request.query_params.get("next"))
+
+@router.get("/auth/callback")
+async def auth_callback(request: Request, code: Optional[str] = None, state: Optional[str] = None):
+    async def resolve_principal(tokens: dict, request: Request) -> SessionPrincipal:
+        claims = verify_claims_somehow(tokens)
+        return SessionPrincipal(
+            user_sub=claims["sub"],
+            email=claims["email"],
+            roles=["reader"],
+            cognito_groups=claims.get("cognito:groups", []),
+            app_context={"tenant_id": claims.get("custom:tenant_id")},
+        )
+
+    try:
+        return await complete_cognito_callback(request, web_config, code, state, resolve_principal)
+    except CognitoWebAuthError as exc:
+        return RedirectResponse(f"/auth/error?reason={exc.reason}", status_code=302)
+
+@router.get("/me")
+async def me(request: Request):
+    principal = load_session_principal(request)
+    if principal is None:
+        raise HTTPException(status_code=401)
+    return principal
+```
+
+The browser-session contract enforces:
+- explicit service-specific cookie names
+- `SameSite=Lax`
+- `https_only` derived from the public base URL
+- strict OAuth state validation
+- normalized session principals without raw OAuth tokens
+- restart invalidation through `server_instance_id`
+
+### Quickstart: Hosted UI Browser Sessions
+
+```python
+from fastapi import FastAPI, Request
+from daylily_cognito import (
+    CognitoWebSessionConfig,
+    SessionPrincipal,
+    complete_cognito_callback,
+    configure_session_middleware,
+    load_session_principal,
+    start_cognito_login,
+)
+
+app = FastAPI()
+web_config = CognitoWebSessionConfig(
+    domain="example.auth.us-west-2.amazoncognito.com",
+    client_id="client-id",
+    redirect_uri="https://localhost:8912/auth/callback",
+    logout_uri="https://localhost:8912/auth/logout",
+    public_base_url="https://localhost:8912",
+    session_cookie_name="example_session",
+    session_secret_key="replace-me",
+    server_instance_id="server-instance-id",
+)
+configure_session_middleware(app, web_config)
+
+@app.get("/auth/login")
+async def auth_login(request: Request, next: str = "/"):
+    return start_cognito_login(request, web_config, next)
+
+@app.get("/auth/callback")
+async def auth_callback(request: Request, code: str = "", state: str = ""):
+    async def resolve_principal(tokens: dict, request: Request) -> SessionPrincipal:
+        del request
+        return SessionPrincipal(
+            user_sub="user-sub",
+            email="user@example.com",
+            roles=["USER"],
+            app_context={"tenant_id": "tenant-1"},
+        )
+
+    return await complete_cognito_callback(request, web_config, code, state, resolve_principal)
+
+@app.get("/me")
+async def me(request: Request):
+    principal = load_session_principal(request)
+    return {"principal": principal.to_session_dict() if principal else None}
+```
+
+Shared browser-session helpers enforce:
+- explicit, non-default cookie names
+- `SameSite=Lax`
+- secure cookies whenever the public base URL is HTTPS
+- strict OAuth state validation
+- normalized session principals without raw OAuth tokens
+- session invalidation when the server instance changes
 
 ### Quickstart: CLI Workflow
 

@@ -41,6 +41,19 @@ from .oauth import (
     refresh_with_refresh_token,
 )
 from .tokens import decode_jwt_unverified, verify_jwt_claims, verify_jwt_claims_unverified_signature
+from .web_session import (
+    SESSION_EXPIRED_REASON,
+    CognitoWebAuthError,
+    CognitoWebSessionConfig,
+    SessionPrincipal,
+    clear_session_principal,
+    complete_cognito_callback,
+    configure_session_middleware,
+    load_session_principal,
+    start_cognito_login,
+    store_session_principal,
+    validate_web_auth_contract,
+)
 
 __all__ = [
     # Config
@@ -57,6 +70,18 @@ __all__ = [
     "build_logout_url",
     "exchange_authorization_code",
     "refresh_with_refresh_token",
+    # Hosted UI web sessions
+    "CognitoWebAuthError",
+    "CognitoWebSessionConfig",
+    "SESSION_EXPIRED_REASON",
+    "SessionPrincipal",
+    "configure_session_middleware",
+    "start_cognito_login",
+    "complete_cognito_callback",
+    "load_session_principal",
+    "store_session_principal",
+    "clear_session_principal",
+    "validate_web_auth_contract",
     # Google OAuth
     "build_google_authorization_url",
     "exchange_google_code_for_tokens",
