@@ -43,7 +43,6 @@ auth = [
     "python-jose[cryptography]>=3.3.0",
 ]
 dev = [
-    "cli-core-yo>=0.5.1",
     "httpx>=0.24.0",
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
