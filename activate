@@ -38,19 +38,31 @@ fi
 
 _DAYCOG_VENV_DIR="$_DAYCOG_ACTIVATE_DIR/.venv"
 
-_daycog_module_is_from_repo() {
+_daycog_distribution_is_editable_from_repo() {
   python - "$1" <<'PY' >/dev/null 2>&1
-import importlib
 import pathlib
+import subprocess
 import sys
 
 repo_root = pathlib.Path(sys.argv[1]).resolve()
-module = importlib.import_module("daylily_cognito")
-module_file = getattr(module, "__file__", "")
-if not module_file:
+proc = subprocess.run(
+    [sys.executable, "-m", "pip", "show", "daylily-cognito"],
+    capture_output=True,
+    text=True,
+)
+if proc.returncode != 0:
     raise SystemExit(1)
-module_path = pathlib.Path(module_file).resolve()
-raise SystemExit(0 if module_path == repo_root or repo_root in module_path.parents else 1)
+
+editable_location = None
+for line in proc.stdout.splitlines():
+    if line.startswith("Editable project location:"):
+        editable_location = line.split(":", 1)[1].strip()
+        break
+
+if not editable_location:
+    raise SystemExit(1)
+
+raise SystemExit(0 if pathlib.Path(editable_location).resolve() == repo_root else 1)
 PY
 }
 
@@ -79,7 +91,7 @@ if ! python -m pip install --upgrade pip setuptools wheel >/dev/null; then
 fi
 
 _DAYCOG_NEEDS_INSTALL=0
-if ! _daycog_module_is_from_repo "$_DAYCOG_ACTIVATE_DIR"; then
+if ! _daycog_distribution_is_editable_from_repo "$_DAYCOG_ACTIVATE_DIR"; then
   _DAYCOG_NEEDS_INSTALL=1
 fi
 if ! python -c "import pytest" >/dev/null 2>&1; then
@@ -92,8 +104,8 @@ if [ "$_DAYCOG_NEEDS_INSTALL" = "1" ]; then
     echo "Editable install failed" >&2
     return 1
   fi
-  if ! _daycog_module_is_from_repo "$_DAYCOG_ACTIVATE_DIR"; then
-    echo "daylily-cognito still resolves outside $_DAYCOG_ACTIVATE_DIR" >&2
+  if ! _daycog_distribution_is_editable_from_repo "$_DAYCOG_ACTIVATE_DIR"; then
+    echo "daylily-cognito is not installed editable from $_DAYCOG_ACTIVATE_DIR" >&2
     return 1
   fi
 fi
@@ -157,4 +169,4 @@ unset _DAYCOG_SOURCE
 unset _DAYCOG_SOURCED
 unset _DAYCOG_VENV_DIR
 unset _DAYCOG_NEEDS_INSTALL
-unset -f _daycog_module_is_from_repo
+unset -f _daycog_distribution_is_editable_from_repo
