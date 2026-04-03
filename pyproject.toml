@@ -43,7 +43,9 @@ auth = [
     "python-jose[cryptography]>=3.3.0",
 ]
 dev = [
+    "bandit[toml]>=1.8.0",
     "httpx>=0.24.0",
+    "pre-commit>=3.8.0",
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
     "ruff>=0.1.0",
@@ -78,6 +80,11 @@ ignore = [
 
 [tool.ruff.format]
 quote-style = "double"
+
+[tool.bandit]
+targets = ["daylily_cognito"]
+exclude_dirs = ["tests", "dist", "build"]
+skips = ["B101", "B105", "B404", "B603", "B607"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
