@@ -37,6 +37,19 @@ class TestBuildAuthorizationUrl:
         assert params["response_type"] == ["code"]
         assert params["scope"] == ["openid email profile"]
 
+    def test_scheme_prefixed_domain(self) -> None:
+        """Normalizes scheme-prefixed domains without double-prepending https."""
+        url = build_authorization_url(
+            domain="https://myapp.auth.us-west-2.amazoncognito.com",
+            client_id="abc123",
+            redirect_uri="http://localhost:8000/callback",
+        )
+
+        parsed = urlparse(url)
+        assert parsed.scheme == "https"
+        assert parsed.netloc == "myapp.auth.us-west-2.amazoncognito.com"
+        assert parsed.path == "/oauth2/authorize"
+
     def test_with_state(self) -> None:
         """Includes state parameter when provided."""
         url = build_authorization_url(
@@ -110,6 +123,19 @@ class TestBuildLogoutUrl:
         )
         assert url1 == url2
 
+    def test_scheme_prefixed_domain(self) -> None:
+        """Normalizes scheme-prefixed domains without double-prepending https."""
+        url = build_logout_url(
+            domain="https://myapp.auth.us-west-2.amazoncognito.com",
+            client_id="abc123",
+            logout_uri="http://localhost:8000/",
+        )
+
+        parsed = urlparse(url)
+        assert parsed.scheme == "https"
+        assert parsed.netloc == "myapp.auth.us-west-2.amazoncognito.com"
+        assert parsed.path == "/logout"
+
 
 # ---------------------------------------------------------------------------
 # exchange_authorization_code (mocked HTTP)
@@ -171,6 +197,24 @@ class TestExchangeAuthorizationCode:
         body = req.data.decode("utf-8")
         assert "client_secret=secret" in body
         assert "code_verifier=verifier" in body
+
+    @mock.patch("daylily_cognito.oauth.urllib.request.urlopen")
+    def test_scheme_prefixed_domain(self, mock_urlopen: mock.MagicMock) -> None:
+        mock_resp = mock.MagicMock()
+        mock_resp.read.return_value = b'{"access_token": "at"}'
+        mock_resp.__enter__ = mock.MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = mock.MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        exchange_authorization_code(
+            domain="https://d.auth.us-west-2.amazoncognito.com",
+            client_id="cid",
+            code="code",
+            redirect_uri="http://localhost/cb",
+        )
+
+        req = mock_urlopen.call_args[0][0]
+        assert req.full_url == "https://d.auth.us-west-2.amazoncognito.com/oauth2/token"
 
     @mock.patch("daylily_cognito.oauth.urllib.request.urlopen")
     def test_exchange_failure(self, mock_urlopen: mock.MagicMock) -> None:

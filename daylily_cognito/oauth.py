@@ -14,6 +14,16 @@ from typing import Any, Optional
 from .config import CognitoConfig
 
 
+def _normalize_domain(domain: str) -> str:
+    value = domain.strip()
+    parsed = urllib.parse.urlsplit(value)
+    if parsed.scheme and parsed.netloc:
+        value = parsed.netloc
+    elif parsed.scheme and parsed.path:
+        value = parsed.path
+    return value.rstrip("/")
+
+
 def build_authorization_url(
     *,
     domain: str,
@@ -62,7 +72,7 @@ def build_authorization_url(
         params["code_challenge_method"] = code_challenge_method
 
     query = urllib.parse.urlencode(params)
-    return f"https://{domain}/oauth2/authorize?{query}"
+    return f"https://{_normalize_domain(domain)}/oauth2/authorize?{query}"
 
 
 def build_logout_url(
@@ -93,7 +103,7 @@ def build_logout_url(
         "logout_uri": logout_uri,
     }
     query = urllib.parse.urlencode(params)
-    return f"https://{domain}/logout?{query}"
+    return f"https://{_normalize_domain(domain)}/logout?{query}"
 
 
 def exchange_authorization_code(
@@ -131,7 +141,7 @@ def exchange_authorization_code(
             redirect_uri="http://localhost:8000/auth/callback",
         )
     """
-    url = f"https://{domain}/oauth2/token"
+    url = f"https://{_normalize_domain(domain)}/oauth2/token"
 
     data = {
         "grant_type": "authorization_code",
