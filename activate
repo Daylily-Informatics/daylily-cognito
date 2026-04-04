@@ -68,11 +68,11 @@ PY
 
 if [ ! -x "$_DAYCOG_VENV_DIR/bin/python" ]; then
   echo "Creating virtual environment at $_DAYCOG_VENV_DIR"
-  if ! command -v python3 >/dev/null 2>&1; then
-    echo "python3 not found on PATH" >&2
+  if ! command -v python3.12 >/dev/null 2>&1; then
+    echo "python3.12 not found on PATH" >&2
     return 1
   fi
-  if ! python3 -m venv "$_DAYCOG_VENV_DIR"; then
+  if ! python3.12 -m venv "$_DAYCOG_VENV_DIR"; then
     echo "Failed to create virtual environment" >&2
     return 1
   fi

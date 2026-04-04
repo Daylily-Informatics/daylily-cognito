@@ -12,7 +12,7 @@ spec = CliSpec(
     ),
     plugins=PluginSpec(
         explicit=[
-            "daylily_cognito.plugins.core",
+            "daylily_cognito.plugins.core.register",
         ]
     )
 )

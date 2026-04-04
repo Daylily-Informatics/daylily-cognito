@@ -22,7 +22,6 @@ Example usage:
 """
 
 from .auth import CognitoAuth
-from .cli import cognito_app, main
 from .config import CognitoConfig
 from .domain_validator import DomainValidator
 from .fastapi import create_auth_dependency, security
@@ -94,9 +93,6 @@ __all__ = [
     "verify_jwt_claims_unverified_signature",
     # JWKS
     "JWKSCache",
-    # CLI
-    "cognito_app",
-    "main",
 ]
 
 try:
