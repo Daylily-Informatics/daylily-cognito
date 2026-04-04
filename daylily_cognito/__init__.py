@@ -7,7 +7,7 @@ Example usage:
     from daylily_cognito import CognitoConfig, CognitoAuth, create_auth_dependency
 
     # Load config from environment
-    config = CognitoConfig.from_legacy_env()
+    config = CognitoConfig.from_env("default")
 
     # Create auth handler
     auth = CognitoAuth(

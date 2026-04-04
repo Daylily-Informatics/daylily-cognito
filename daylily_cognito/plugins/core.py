@@ -666,10 +666,9 @@ def _get_cognito_region() -> str:
             config = CognitoConfig.from_env(_config_name)
             return config.region
         except ValueError:
-            pass  # Fall through to legacy
+            pass
 
-    # Legacy: COGNITO_REGION > AWS_REGION > us-west-2
-    return os.environ.get("COGNITO_REGION") or os.environ.get("AWS_REGION") or "us-west-2"
+    return "us-west-2"
 
 
 def _get_cognito_client() -> Any:
@@ -1998,16 +1997,10 @@ def _get_pool_id() -> str:
             config = CognitoConfig.from_env(_config_name)
             return config.user_pool_id
         except ValueError:
-            pass  # Fall through to legacy
-
-    # Legacy: environment variable
-    pool_id = os.environ.get("COGNITO_USER_POOL_ID")
-    if pool_id:
-        return pool_id
+            pass
 
     # Not configured anywhere
     console.print("[red]✗[/red]  Cognito User Pool ID not configured")
-    console.print("   Set via environment: [cyan]export COGNITO_USER_POOL_ID=your-pool-id[/cyan]")
     console.print("   Or use --config NAME with DAYCOG_<NAME>_USER_POOL_ID")
     raise typer.Exit(1)
 
@@ -2017,8 +2010,6 @@ def _get_client_id() -> str:
 
     Priority order:
     1. Named config (if --config provided)
-    2. COGNITO_APP_CLIENT_ID environment variable
-    3. COGNITO_CLIENT_ID environment variable (fallback)
 
     Raises:
         typer.Exit(1) if not configured anywhere.
@@ -2029,16 +2020,10 @@ def _get_client_id() -> str:
             config = CognitoConfig.from_env(_config_name)
             return config.app_client_id
         except ValueError:
-            pass  # Fall through to legacy
-
-    # Legacy: environment variables
-    client_id = os.environ.get("COGNITO_APP_CLIENT_ID") or os.environ.get("COGNITO_CLIENT_ID")
-    if client_id:
-        return client_id
+            pass
 
     # Not configured anywhere
     console.print("[red]✗[/red]  Cognito App Client ID not configured")
-    console.print("   Set via environment: [cyan]export COGNITO_APP_CLIENT_ID=your-client-id[/cyan]")
     console.print("   Or use --config NAME with DAYCOG_<NAME>_APP_CLIENT_ID")
     raise typer.Exit(1)
 
