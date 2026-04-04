@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 CONFIG_PATH = Path(__file__).resolve().parents[1] / ".pre-commit-config.yaml"
 REQUIRED_SNIPPETS = {
     "default_install_hook_types": "default_install_hook_types",
