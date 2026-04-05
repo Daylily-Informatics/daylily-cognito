@@ -5,12 +5,17 @@ from __future__ import annotations
 import json
 import os
 import re
+import runpy
+import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
+import pytest
 import typer.testing
 import yaml
 
+import daylily_cognito.plugins.core as core
 from daylily_cognito.plugins.core import cognito_app
 
 runner = typer.testing.CliRunner()
@@ -1717,7 +1722,9 @@ class TestExportCommand:
             result = runner.invoke(cognito_app, ["export", "--output", out_file])
         assert result.exit_code == 0
         data = json.loads(open(out_file).read())
+        exported_at = datetime.fromisoformat(data["exported_at"])
         assert data["user_count"] == 1
+        assert exported_at.tzinfo == timezone.utc
         assert data["users"][0]["username"] == "a@x.com"
 
 
@@ -1794,6 +1801,498 @@ class TestSetupGoogleCommand:
 
 
 # ---------------------------------------------------------------------------
+# helper functions
+# ---------------------------------------------------------------------------
+
+
+class TestCoreHelperFunctions:
+    def test_config_dir_uses_daycog_home(self, tmp_path) -> None:
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            assert core._config_dir() == tmp_path / ".config" / "daycog"
+
+    def test_cleanup_pool_contexts_removes_matching_prefixes_and_active_context(self, tmp_path) -> None:
+        _write_store(
+            tmp_path,
+            contexts={
+                "pool-name.us-west-2": {"COGNITO_USER_POOL_ID": "pool-123"},
+                "pool-123.us-west-2.web-app": {"COGNITO_USER_POOL_ID": "pool-123"},
+                "custom-active": {"COGNITO_USER_POOL_ID": "pool-123"},
+                "other.us-west-2": {"COGNITO_USER_POOL_ID": "pool-999"},
+            },
+            active_context="custom-active",
+        )
+
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            removed = core._cleanup_pool_contexts("pool-name", "us-west-2", "pool-123")
+
+        assert set(removed) == {
+            "pool-name.us-west-2",
+            "pool-123.us-west-2.web-app",
+            "custom-active",
+        }
+        assert _get_context_values(tmp_path, "other.us-west-2") == {"COGNITO_USER_POOL_ID": "pool-999"}
+        assert _get_context_values(tmp_path, "custom-active") == {}
+        assert _get_active_context_name(tmp_path) == ""
+
+    @mock.patch.dict(os.environ, {"AWS_PROFILE": "env-profile", "AWS_REGION": "us-west-2"}, clear=True)
+    def test_resolve_profile_region_prefers_flags(self) -> None:
+        assert core._resolve_profile_region("flag-profile", "us-east-1") == ("flag-profile", "us-east-1")
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_resolve_profile_region_requires_profile(self) -> None:
+        with pytest.raises(Exception) as exc:
+            core._resolve_profile_region(None, "us-west-2")
+        assert getattr(exc.value, "exit_code", 1) == 1
+
+    @mock.patch.dict(os.environ, {"AWS_PROFILE": "env-profile"}, clear=True)
+    def test_resolve_profile_region_requires_region(self) -> None:
+        with pytest.raises(Exception) as exc:
+            core._resolve_profile_region(None, None)
+        assert getattr(exc.value, "exit_code", 1) == 1
+
+    def test_parse_tags_handles_blank_entries_and_empty_keys(self) -> None:
+        assert core._parse_tags("env=dev, ,owner=team") == {"env": "dev", "owner": "team"}
+        with pytest.raises(Exception) as exc:
+            core._parse_tags("=value")
+        assert getattr(exc.value, "exit_code", 1) == 1
+
+    def test_resolve_mfa_configuration_rejects_invalid_value(self) -> None:
+        with pytest.raises(Exception) as exc:
+            core._resolve_mfa_configuration("sometimes")
+        assert getattr(exc.value, "exit_code", 1) == 1
+
+    def test_resolve_google_client_details_reads_json_file(self, tmp_path) -> None:
+        payload = {"web": {"client_id": "gid123", "client_secret": "gsec456"}}
+        path = tmp_path / "google-client.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        assert core._resolve_google_client_details(
+            google_client_id=None,
+            google_client_secret=None,
+            google_client_json=str(path),
+        ) == ("gid123", "gsec456")
+
+    def test_resolve_google_client_details_rejects_invalid_json(self, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(core, "_config_name", None)
+        bad_path = tmp_path / "google-client.json"
+        bad_path.write_text("{", encoding="utf-8")
+
+        with pytest.raises(Exception) as exc:
+            core._resolve_google_client_details(
+                google_client_id=None,
+                google_client_secret=None,
+                google_client_json=str(bad_path),
+            )
+        assert getattr(exc.value, "exit_code", 1) == 1
+
+    def test_resolve_google_client_details_uses_named_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(core, "_config_name", "named")
+        monkeypatch.setattr(
+            core.CognitoConfig,
+            "from_env",
+            mock.Mock(return_value=mock.Mock(google_client_id="gid-from-config", google_client_secret="gsec-from-config")),
+        )
+
+        assert core._resolve_google_client_details(
+            google_client_id=None,
+            google_client_secret=None,
+            google_client_json=None,
+        ) == ("gid-from-config", "gsec-from-config")
+
+    def test_resolve_google_client_details_named_config_errors_still_fail_cleanly(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(core, "_config_name", "named")
+        monkeypatch.setattr(core.CognitoConfig, "from_env", mock.Mock(side_effect=ValueError("missing")))
+
+        with pytest.raises(Exception) as exc:
+            core._resolve_google_client_details(
+                google_client_id=None,
+                google_client_secret=None,
+                google_client_json=None,
+            )
+        assert getattr(exc.value, "exit_code", 1) == 1
+
+    def test_resolve_google_client_details_uses_active_context(self, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(core, "_config_name", None)
+        _write_store(
+            tmp_path,
+            contexts={_ACTIVE_CTX: {"GOOGLE_CLIENT_ID": "gid-from-store", "GOOGLE_CLIENT_SECRET": "gsec-from-store"}},
+            active_context=_ACTIVE_CTX,
+        )
+
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            assert core._resolve_google_client_details(
+                google_client_id=None,
+                google_client_secret=None,
+                google_client_json=None,
+            ) == ("gid-from-store", "gsec-from-store")
+
+    def test_resolve_google_client_details_requires_values(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(core, "_config_name", None)
+        with mock.patch("daylily_cognito.plugins.core.get_context_values", return_value={}):
+            with pytest.raises(Exception) as exc:
+                core._resolve_google_client_details(
+                    google_client_id=None,
+                    google_client_secret=None,
+                    google_client_json=None,
+                )
+        assert getattr(exc.value, "exit_code", 1) == 1
+
+    def test_build_pool_details_includes_cognito_domain(self) -> None:
+        details = core._build_pool_details(
+            {
+                "pool_id": "pool-123",
+                "pool_name": "pool-name",
+                "pool_info": {"Domain": "pool-prefix"},
+            },
+            "us-west-2",
+        )
+        assert details["cognito_domain"] == "pool-prefix.auth.us-west-2.amazoncognito.com"
+
+    def test_resolve_cognito_domain_supports_custom_domains(self) -> None:
+        assert core._resolve_cognito_domain({"CustomDomain": "auth.example.com"}, "us-west-2") == "auth.example.com"
+        assert (
+            core._resolve_cognito_domain({"CustomDomain": {"DomainName": "custom.example.com"}}, "us-west-2")
+            == "custom.example.com"
+        )
+
+    def test_context_payload_reads_values_from_store(self, tmp_path) -> None:
+        _write_store(
+            tmp_path,
+            contexts={_ACTIVE_CTX: {"AWS_PROFILE": "from-store"}},
+            active_context=_ACTIVE_CTX,
+        )
+
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            payload = core._context_payload(_ACTIVE_CTX)
+
+        assert payload["context_name"] == _ACTIVE_CTX
+        assert payload["values"] == {"AWS_PROFILE": "from-store"}
+        assert payload["config_store_path"] == str(_cfg_path(tmp_path))
+
+    def test_find_pool_id_by_name_errors_when_missing(self) -> None:
+        cognito = mock.MagicMock()
+        paginator = mock.MagicMock()
+        paginator.paginate.return_value = [{"UserPools": [{"Name": "other-pool", "Id": "pool-999"}]}]
+        cognito.get_paginator.return_value = paginator
+
+        with pytest.raises(Exception) as exc:
+            core._find_pool_id_by_name(cognito, "wanted-pool")
+        assert getattr(exc.value, "exit_code", 1) == 1
+
+    def test_find_client_errors_when_missing(self) -> None:
+        cognito = mock.MagicMock()
+        cognito.list_user_pool_clients.return_value = {"UserPoolClients": []}
+
+        with pytest.raises(Exception) as exc:
+            core._find_client(cognito, "pool-123", client_name="web-app")
+        assert getattr(exc.value, "exit_code", 1) == 1
+
+    def test_resolve_pool_requires_selector_and_rejects_mismatched_name(self) -> None:
+        cognito = mock.MagicMock()
+        with pytest.raises(Exception) as missing_exc:
+            core._resolve_pool(cognito)
+        assert getattr(missing_exc.value, "exit_code", 1) == 1
+
+        cognito.describe_user_pool.return_value = {"UserPool": {"Name": "actual-pool", "Id": "pool-123"}}
+        with pytest.raises(Exception) as mismatch_exc:
+            core._resolve_pool(cognito, pool_name="expected-pool", pool_id="pool-123")
+        assert getattr(mismatch_exc.value, "exit_code", 1) == 1
+
+    def test_select_config_client_handles_invalid_empty_and_multiple_options(self) -> None:
+        cognito = mock.MagicMock()
+        with pytest.raises(Exception) as invalid_exc:
+            core._select_config_client(cognito, "pool-123", client_name="web-app", client_id="client-123")
+        assert getattr(invalid_exc.value, "exit_code", 1) == 1
+
+        cognito.list_user_pool_clients.return_value = {"UserPoolClients": []}
+        assert core._select_config_client(cognito, "pool-123") is None
+
+        cognito.list_user_pool_clients.return_value = {
+            "UserPoolClients": [
+                {"ClientId": "client-1", "ClientName": "web-a"},
+                {"ClientId": "client-2", "ClientName": "web-b"},
+            ]
+        }
+        with pytest.raises(Exception) as multiple_exc:
+            core._select_config_client(cognito, "pool-123")
+        assert getattr(multiple_exc.value, "exit_code", 1) == 1
+
+    @mock.patch.dict(os.environ, {"AWS_PROFILE": "env-profile"}, clear=True)
+    def test_resolve_pool_print_context_name_falls_back_to_legacy_when_lookup_fails(self) -> None:
+        with mock.patch("boto3.Session", side_effect=RuntimeError("boom")):
+            assert core._resolve_pool_print_context_name("pool-name", "us-west-2") == "pool-name.us-west-2"
+
+    @mock.patch.dict(os.environ, {"AWS_PROFILE": "env-profile", "AWS_REGION": "us-west-2"}, clear=True)
+    def test_collect_known_cli_values_merges_named_config_and_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(core, "_config_name", "named")
+        monkeypatch.setattr(
+            core.CognitoConfig,
+            "from_env",
+            mock.Mock(
+                return_value=mock.Mock(
+                    region="us-east-1",
+                    user_pool_id="pool-123",
+                    app_client_id="client-123",
+                    aws_profile="stored-profile",
+                    google_client_id="gid123",
+                    google_client_secret="gsec456",
+                    cognito_domain="domain.example.com",
+                )
+            ),
+        )
+
+        values = core._collect_known_cli_values()
+
+        assert values == {
+            "COGNITO_REGION": "us-east-1",
+            "COGNITO_USER_POOL_ID": "pool-123",
+            "COGNITO_APP_CLIENT_ID": "client-123",
+            "AWS_PROFILE": "env-profile",
+            "GOOGLE_CLIENT_ID": "gid123",
+            "GOOGLE_CLIENT_SECRET": "gsec456",
+            "COGNITO_DOMAIN": "domain.example.com",
+            "AWS_REGION": "us-west-2",
+        }
+
+    @mock.patch.dict(os.environ, {"AWS_PROFILE": "env-profile", "AWS_REGION": "us-west-2"}, clear=True)
+    def test_collect_known_cli_values_falls_back_to_env_when_named_config_is_invalid(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(core, "_config_name", "named")
+        monkeypatch.setattr(core.CognitoConfig, "from_env", mock.Mock(side_effect=ValueError("missing")))
+
+        assert core._collect_known_cli_values() == {
+            "AWS_PROFILE": "env-profile",
+            "AWS_REGION": "us-west-2",
+        }
+
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_check_aws_profile_requires_env_var(self) -> None:
+        with pytest.raises(Exception) as exc:
+            core._check_aws_profile()
+        assert getattr(exc.value, "exit_code", 1) == 1
+
+    def test_get_cognito_region_uses_named_config_or_errors(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(core, "_config_name", "named")
+        monkeypatch.setattr(core.CognitoConfig, "from_env", mock.Mock(return_value=mock.Mock(region="us-east-1")))
+        assert core._get_cognito_region() == "us-east-1"
+
+        monkeypatch.setattr(core.CognitoConfig, "from_env", mock.Mock(side_effect=ValueError("missing")))
+        with pytest.raises(Exception) as exc:
+            core._get_cognito_region()
+        assert getattr(exc.value, "exit_code", 1) == 1
+
+    def test_parse_attributes_skips_blank_and_rejects_invalid_shapes(self) -> None:
+        assert core._parse_attributes([" email =user@example.com ", ""]) == [{"Name": "email", "Value": "user@example.com"}]
+
+        with pytest.raises(Exception) as invalid_exc:
+            core._parse_attributes(["not-an-attribute"])
+        assert getattr(invalid_exc.value, "exit_code", 1) == 1
+
+        with pytest.raises(Exception) as empty_exc:
+            core._parse_attributes([" =value"])
+        assert getattr(empty_exc.value, "exit_code", 1) == 1
+
+    def test_resolve_context_name_for_print_requires_resolvable_context(self, tmp_path) -> None:
+        _write_store(tmp_path, contexts={}, active_context="")
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            with pytest.raises(Exception) as missing_exc:
+                core._resolve_context_name_for_print(
+                    pool_name=None,
+                    pool_id=None,
+                    region=None,
+                    profile=None,
+                    client_name=None,
+                    client_id=None,
+                )
+        assert getattr(missing_exc.value, "exit_code", 1) == 1
+
+        _write_store(tmp_path, contexts={"incomplete": {}}, active_context="incomplete")
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            with pytest.raises(Exception) as unresolved_exc:
+                core._resolve_context_name_for_print(
+                    pool_name=None,
+                    pool_id=None,
+                    region=None,
+                    profile=None,
+                    client_name="web-app",
+                    client_id=None,
+                )
+        assert getattr(unresolved_exc.value, "exit_code", 1) == 1
+
+    def test_resolve_context_name_for_print_rejects_duplicate_client_selectors(self) -> None:
+        with pytest.raises(Exception) as exc:
+            core._resolve_context_name_for_print(
+                pool_name=None,
+                pool_id="pool-123",
+                region="us-west-2",
+                profile=None,
+                client_name="web-app",
+                client_id="client-123",
+            )
+        assert getattr(exc.value, "exit_code", 1) == 1
+
+    def test_resolve_context_name_for_print_handles_multiple_and_missing_app_matches(self, tmp_path) -> None:
+        _write_store(
+            tmp_path,
+            contexts={
+                "pool-123.us-west-2": {
+                    "COGNITO_USER_POOL_ID": "pool-123",
+                    "AWS_REGION": "us-west-2",
+                },
+                "pool-123.us-west-2.web-a": {
+                    "COGNITO_USER_POOL_ID": "pool-123",
+                    "AWS_REGION": "us-west-2",
+                    "COGNITO_CLIENT_NAME": "web-app",
+                },
+                "custom-app-context": {
+                    "COGNITO_USER_POOL_ID": "pool-123",
+                    "AWS_REGION": "us-west-2",
+                    "COGNITO_CLIENT_NAME": "web-app",
+                },
+            },
+            active_context="pool-123.us-west-2",
+        )
+
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            with pytest.raises(Exception) as multiple_exc:
+                core._resolve_context_name_for_print(
+                    pool_name=None,
+                    pool_id=None,
+                    region=None,
+                    profile=None,
+                    client_name="web-app",
+                    client_id=None,
+                )
+        assert getattr(multiple_exc.value, "exit_code", 1) == 1
+
+        _write_store(
+            tmp_path,
+            contexts={
+                "pool-123.us-west-2": {
+                    "COGNITO_USER_POOL_ID": "pool-123",
+                    "AWS_REGION": "us-west-2",
+                }
+            },
+            active_context="pool-123.us-west-2",
+        )
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            with pytest.raises(Exception) as missing_exc:
+                core._resolve_context_name_for_print(
+                    pool_name=None,
+                    pool_id=None,
+                    region=None,
+                    profile=None,
+                    client_name=None,
+                    client_id="client-999",
+                )
+        assert getattr(missing_exc.value, "exit_code", 1) == 1
+
+    def test_resolve_context_name_for_print_builds_canonical_name_when_no_app_context_exists(self, tmp_path) -> None:
+        _write_store(
+            tmp_path,
+            contexts={
+                "pool-123.us-west-2": {
+                    "COGNITO_USER_POOL_ID": "pool-123",
+                    "AWS_REGION": "us-west-2",
+                },
+                "other-pool.us-west-2.web-app": {
+                    "COGNITO_USER_POOL_ID": "other-pool",
+                    "AWS_REGION": "us-west-2",
+                    "COGNITO_CLIENT_NAME": "web-app",
+                },
+                "pool-123.us-east-1.web-app": {
+                    "COGNITO_USER_POOL_ID": "pool-123",
+                    "AWS_REGION": "us-east-1",
+                    "COGNITO_CLIENT_NAME": "web-app",
+                },
+            },
+            active_context="pool-123.us-west-2",
+        )
+
+        with mock.patch("pathlib.Path.home", return_value=tmp_path):
+            name = core._resolve_context_name_for_print(
+                pool_name=None,
+                pool_id=None,
+                region=None,
+                profile=None,
+                client_name="web-app",
+                client_id=None,
+            )
+
+        assert name == "pool-123.us-west-2.web-app"
+
+
+# ---------------------------------------------------------------------------
+# status helpers
+# ---------------------------------------------------------------------------
+
+
+class TestStatusCoverage:
+    @mock.patch.dict(os.environ, {"AWS_PROFILE": "env-profile"}, clear=True)
+    @mock.patch("boto3.client")
+    def test_status_handles_invalid_named_config_values(
+        self,
+        mock_boto_client: mock.MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(core, "_get_cognito_region", mock.Mock(return_value="us-west-2"))
+        monkeypatch.setattr(core.CognitoConfig, "from_env", mock.Mock(side_effect=ValueError("missing")))
+        mock_boto_client.return_value = _mock_cognito_client()
+
+        result = runner.invoke(cognito_app, ["--config", "named", "status"])
+        core._config_name = None
+
+        assert result.exit_code == 0
+        assert "Not configured" in result.output
+        assert "not fully configured" in result.output
+
+    @mock.patch.dict(os.environ, {"AWS_PROFILE": "env-profile"}, clear=True)
+    @mock.patch("boto3.client")
+    def test_status_shows_pool_lookup_errors(
+        self,
+        mock_boto_client: mock.MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(core, "_get_cognito_region", mock.Mock(return_value="us-west-2"))
+        monkeypatch.setattr(
+            core,
+            "get_context_values",
+            mock.Mock(return_value={"COGNITO_USER_POOL_ID": "pool-123"}),
+        )
+        client = _mock_cognito_client()
+        client.describe_user_pool.side_effect = RuntimeError("lookup failed")
+        mock_boto_client.return_value = client
+
+        result = runner.invoke(cognito_app, ["status"])
+        core._config_name = None
+
+        assert result.exit_code == 0
+        assert "lookup failed" in result.output
+        assert "Not configured" in result.output
+
+    @mock.patch.dict(os.environ, {"AWS_PROFILE": "env-profile"}, clear=True)
+    @mock.patch("boto3.client")
+    def test_status_top_level_errors_exit_cleanly(
+        self,
+        mock_boto_client: mock.MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(core, "_get_cognito_region", mock.Mock(return_value="us-west-2"))
+        mock_boto_client.side_effect = RuntimeError("aws unavailable")
+
+        result = runner.invoke(cognito_app, ["status"])
+        core._config_name = None
+
+        assert result.exit_code == 1
+        assert "aws unavailable" in result.output
+
+
+# ---------------------------------------------------------------------------
 # main() entry point
 # ---------------------------------------------------------------------------
 
@@ -1803,6 +2302,27 @@ class TestMainEntryPoint:
         from daylily_cognito.cli import main
 
         assert callable(main)
+
+    def test_main_exits_with_cli_status(self) -> None:
+        from daylily_cognito.cli import main
+
+        with mock.patch("daylily_cognito.cli.run", return_value=17):
+            with pytest.raises(SystemExit) as exc:
+                main()
+
+        assert exc.value.code == 17
+
+    def test_module_main_invokes_entry_point(self) -> None:
+        cached_module = sys.modules.pop("daylily_cognito.cli", None)
+        try:
+            with mock.patch("cli_core_yo.app.run", return_value=0):
+                with pytest.raises(SystemExit) as exc:
+                    runpy.run_module("daylily_cognito.cli", run_name="__main__")
+        finally:
+            if cached_module is not None:
+                sys.modules["daylily_cognito.cli"] = cached_module
+
+        assert exc.value.code == 0
 
     def test_help_flag(self) -> None:
         result = runner.invoke(cognito_app, ["--help"])

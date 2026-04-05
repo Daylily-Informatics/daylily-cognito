@@ -2169,7 +2169,7 @@ def export_users(
 
     try:
         import json
-        from datetime import datetime
+        from datetime import datetime, timezone
 
         import boto3
 
@@ -2197,7 +2197,7 @@ def export_users(
 
         # Write to file
         export_data = {
-            "exported_at": datetime.utcnow().isoformat(),
+            "exported_at": datetime.now(timezone.utc).isoformat(),
             "pool_id": pool_id,
             "region": region,
             "user_count": len(users),
