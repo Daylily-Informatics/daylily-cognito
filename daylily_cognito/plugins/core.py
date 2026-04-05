@@ -489,7 +489,7 @@ def _print_context(name: str, *, as_json: bool = False) -> None:
     """Print a Daycog context name and contents from the YAML config store."""
     payload = _context_payload(name)
     if as_json:
-        print(json=json.dumps(payload))
+        output.emit_json(payload)
         return
 
     output.info(f"{payload['config_store_path']} :: {name}")
@@ -628,7 +628,7 @@ def _collect_known_cli_values() -> Dict[str, str]:
     if env.get("COGNITO_LOGOUT_URL"):
         values["COGNITO_LOGOUT_URL"] = env["COGNITO_LOGOUT_URL"]
 
-    app_client_id = env.get("COGNITO_APP_CLIENT_ID") or env.get("COGNITO_CLIENT_ID")
+    app_client_id = env.get("COGNITO_APP_CLIENT_ID")
     if app_client_id:
         values["COGNITO_APP_CLIENT_ID"] = app_client_id
 
@@ -727,9 +727,8 @@ def status() -> None:
                 pool_id = ""
                 client_id = ""
         else:
-            # Legacy env var lookup
             pool_id = os.environ.get("COGNITO_USER_POOL_ID", "")
-            client_id = os.environ.get("COGNITO_APP_CLIENT_ID") or os.environ.get("COGNITO_CLIENT_ID", "")
+            client_id = os.environ.get("COGNITO_APP_CLIENT_ID", "")
             source = "env"
 
         table.add_row("Region", region, source if _config_name else "")
