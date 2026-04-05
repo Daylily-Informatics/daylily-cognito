@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import typer
-from cli_core_yo import output
+from cli_core_yo import ccyo_out
 from rich.console import Console
 from rich.table import Table
 
@@ -174,13 +174,13 @@ def _resolve_profile_region(profile: Optional[str], region: Optional[str]) -> tu
     resolved_region = region or os.environ.get("AWS_REGION")
 
     if not resolved_profile:
-        output.info("[red]✗[/red]  AWS profile not set")
-        output.info("   Pass [cyan]--profile[/cyan] or set [cyan]export AWS_PROFILE=your-profile[/cyan]")
+        ccyo_out.info("[red]✗[/red]  AWS profile not set")
+        ccyo_out.info("   Pass [cyan]--profile[/cyan] or set [cyan]export AWS_PROFILE=your-profile[/cyan]")
         raise typer.Exit(1)
 
     if not resolved_region:
-        output.info("[red]✗[/red]  AWS region not set")
-        output.info("   Pass [cyan]--region[/cyan] or set [cyan]export AWS_REGION=us-west-2[/cyan]")
+        ccyo_out.info("[red]✗[/red]  AWS region not set")
+        ccyo_out.info("   Pass [cyan]--region[/cyan] or set [cyan]export AWS_REGION=us-west-2[/cyan]")
         raise typer.Exit(1)
 
     return resolved_profile, resolved_region
@@ -201,13 +201,13 @@ def _parse_tags(value: Optional[str]) -> Dict[str, str]:
         if not item:
             continue
         if "=" not in item:
-            output.info(f"[red]✗[/red]  Invalid tag format: {item}. Use key=value")
+            ccyo_out.info(f"[red]✗[/red]  Invalid tag format: {item}. Use key=value")
             raise typer.Exit(1)
         key, tag_value = item.split("=", 1)
         key = key.strip()
         tag_value = tag_value.strip()
         if not key:
-            output.info(f"[red]✗[/red]  Invalid empty tag key in: {item}")
+            ccyo_out.info(f"[red]✗[/red]  Invalid empty tag key in: {item}")
             raise typer.Exit(1)
         parsed[key] = tag_value
     return parsed
@@ -226,7 +226,7 @@ def _resolve_mfa_configuration(mfa: str) -> str:
     normalized = mfa.strip().lower()
     mapping = {"off": "OFF", "optional": "OPTIONAL", "required": "ON"}
     if normalized not in mapping:
-        output.info("[red]✗[/red]  Invalid --mfa value. Use one of: off, optional, required")
+        ccyo_out.info("[red]✗[/red]  Invalid --mfa value. Use one of: off, optional, required")
         raise typer.Exit(1)
     return mapping[normalized]
 
@@ -248,7 +248,7 @@ def _resolve_google_client_details(
             resolved_id = resolved_id or node.get("client_id")
             resolved_secret = resolved_secret or node.get("client_secret")
         except Exception as e:
-            output.info(f"[red]✗[/red]  Failed to read Google client JSON: {e}")
+            ccyo_out.info(f"[red]✗[/red]  Failed to read Google client JSON: {e}")
             raise typer.Exit(1)
 
     resolved_id = resolved_id or os.environ.get("GOOGLE_CLIENT_ID")
@@ -260,8 +260,8 @@ def _resolve_google_client_details(
         resolved_secret = resolved_secret or os.environ.get(f"DAYCOG_{name_upper}_GOOGLE_CLIENT_SECRET")
 
     if not resolved_id or not resolved_secret:
-        output.info("[red]✗[/red]  Google OAuth client details missing")
-        output.info(
+        ccyo_out.info("[red]✗[/red]  Google OAuth client details missing")
+        ccyo_out.info(
             "   Provide --google-client-id/--google-client-secret, or --google-client-json, "
             "or set GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET"
         )
@@ -291,14 +291,14 @@ def _resolve_cognito_domain(pool_info: Dict[str, Any], region: str) -> str:
 def _resolve_pool(cognito: Any, pool_name: Optional[str] = None, pool_id: Optional[str] = None) -> Dict[str, Any]:
     """Resolve a pool by name or ID and return both identifiers plus pool info."""
     if not pool_name and not pool_id:
-        output.info("[red]✗[/red]  Provide one of: --pool-name or --pool-id")
+        ccyo_out.info("[red]✗[/red]  Provide one of: --pool-name or --pool-id")
         raise typer.Exit(1)
 
     if pool_id:
         pool_info = cognito.describe_user_pool(UserPoolId=pool_id)["UserPool"]
         resolved_pool_name = pool_info["Name"]
         if pool_name and pool_name != resolved_pool_name:
-            output.info(f"[red]✗[/red]  Pool name '{pool_name}' does not match resolved pool '{resolved_pool_name}'")
+            ccyo_out.info(f"[red]✗[/red]  Pool name '{pool_name}' does not match resolved pool '{resolved_pool_name}'")
             raise typer.Exit(1)
         return {"pool_id": pool_id, "pool_name": resolved_pool_name, "pool_info": pool_info}
 
@@ -320,7 +320,7 @@ def _find_pool_id_by_name(cognito: Any, pool_name: str) -> str:
             break
 
     if not matched_pool:
-        output.info(f"[red]✗[/red]  Pool not found: {pool_name}")
+        ccyo_out.info(f"[red]✗[/red]  Pool not found: {pool_name}")
         raise typer.Exit(1)
 
     return matched_pool["Id"]
@@ -344,7 +344,7 @@ def _find_client(
 
     if not match:
         label = client_id or client_name or "<unknown>"
-        output.info(f"[red]✗[/red]  App client not found: {label}")
+        ccyo_out.info(f"[red]✗[/red]  App client not found: {label}")
         raise typer.Exit(1)
 
     return {"client_id": match["ClientId"], "client_name": match["ClientName"]}
@@ -383,7 +383,7 @@ def _select_config_client(
 ) -> Optional[Dict[str, str]]:
     """Select a client for config commands, requiring explicit choice when multiple exist."""
     if client_name and client_id:
-        output.info("[red]✗[/red]  Provide only one of: --client-name or --client-id")
+        ccyo_out.info("[red]✗[/red]  Provide only one of: --client-name or --client-id")
         raise typer.Exit(1)
 
     clients = _list_pool_clients(cognito, pool_id)
@@ -396,12 +396,12 @@ def _select_config_client(
     if len(clients) == 1:
         return _describe_client(cognito, pool_id, client_id=clients[0]["ClientId"])
 
-    output.info(
+    ccyo_out.info(
         "[red]✗[/red]  Pool has multiple app clients; pass --client-name/--client-id or use "
         "[cyan]daycog config create-all[/cyan]"
     )
     for client in clients:
-        output.info(f"   {client.get('ClientName', '')} ({client.get('ClientId', '')})")
+        ccyo_out.info(f"   {client.get('ClientName', '')} ({client.get('ClientId', '')})")
     raise typer.Exit(1)
 
 
@@ -492,10 +492,10 @@ def _print_context(name: str, *, as_json: bool = False) -> None:
         print(json=json.dumps(payload))
         return
 
-    output.info(f"{payload['config_store_path']} :: {name}")
+    ccyo_out.info(f"{payload['config_store_path']} :: {name}")
     lines = _render_env_lines(payload["values"])
     if lines:
-        output.info("\n".join(lines))
+        ccyo_out.info("\n".join(lines))
 
 
 def _resolve_context_name_for_print(
@@ -509,7 +509,7 @@ def _resolve_context_name_for_print(
 ) -> str:
     """Resolve the stored pool/app context name for config-print operations."""
     if client_name and client_id:
-        output.info("[red]✗[/red]  Provide only one of: --client-name or --client-id")
+        ccyo_out.info("[red]✗[/red]  Provide only one of: --client-name or --client-id")
         raise typer.Exit(1)
 
     if pool_id:
@@ -519,7 +519,7 @@ def _resolve_context_name_for_print(
     else:
         pool_context_name = get_active_context_name()
         if not pool_context_name:
-            output.info("[red]✗[/red]  No active Daycog context is set")
+            ccyo_out.info("[red]✗[/red]  No active Daycog context is set")
             raise typer.Exit(1)
 
     if not client_name and not client_id:
@@ -537,7 +537,7 @@ def _resolve_context_name_for_print(
         or str(pool_values.get("AWS_REGION") or "").strip()
     ).strip()
     if not selected_pool_id or not selected_region:
-        output.info("[red]✗[/red]  Unable to resolve pool ID/region for the requested app context")
+        ccyo_out.info("[red]✗[/red]  Unable to resolve pool ID/region for the requested app context")
         raise typer.Exit(1)
 
     contexts = list_context_values()
@@ -557,15 +557,15 @@ def _resolve_context_name_for_print(
     if len(matches) == 1:
         return matches[0]
     if len(matches) > 1:
-        output.info("[red]✗[/red]  Multiple matching app contexts found:")
+        ccyo_out.info("[red]✗[/red]  Multiple matching app contexts found:")
         for match in sorted(matches):
-            output.info(f"   {match}")
+            ccyo_out.info(f"   {match}")
         raise typer.Exit(1)
 
     if client_name:
         return _app_context_name(selected_pool_id, selected_region, client_name)
 
-    output.info("[red]✗[/red]  No stored app context matches the requested client")
+    ccyo_out.info("[red]✗[/red]  No stored app context matches the requested client")
     raise typer.Exit(1)
 
 
@@ -645,8 +645,8 @@ def _collect_known_cli_values() -> Dict[str, str]:
 def _check_aws_profile() -> None:
     """Check if AWS_PROFILE is set."""
     if not os.environ.get("AWS_PROFILE"):
-        output.info("[red]✗[/red]  AWS_PROFILE not set")
-        output.info("   Set it with: [cyan]export AWS_PROFILE=your-profile[/cyan]")
+        ccyo_out.info("[red]✗[/red]  AWS_PROFILE not set")
+        ccyo_out.info("   Set it with: [cyan]export AWS_PROFILE=your-profile[/cyan]")
         raise typer.Exit(1)
 
 
@@ -687,12 +687,12 @@ def _parse_attributes(values: List[str]) -> List[Dict[str, str]]:
         if not item:
             continue
         if "=" not in item:
-            output.info(f"[red]✗[/red]  Invalid attribute format: {item}. Use Name=Value")
+            ccyo_out.info(f"[red]✗[/red]  Invalid attribute format: {item}. Use Name=Value")
             raise typer.Exit(1)
         name, value = item.split("=", 1)
         name = name.strip()
         if not name:
-            output.info(f"[red]✗[/red]  Invalid empty attribute name in: {item}")
+            ccyo_out.info(f"[red]✗[/red]  Invalid empty attribute name in: {item}")
             raise typer.Exit(1)
         attributes.append({"Name": name, "Value": value})
     return attributes
@@ -703,7 +703,7 @@ def status() -> None:
     """Check Cognito configuration status."""
     _check_aws_profile()
 
-    output.info("[cyan]Checking Cognito configuration...[/cyan]\n")
+    ccyo_out.info("[cyan]Checking Cognito configuration...[/cyan]\n")
 
     try:
         import boto3
@@ -751,15 +751,15 @@ def status() -> None:
         else:
             table.add_row("App Client ID", "[dim]Not configured[/dim]", "")
 
-        output.info(table)
+        ccyo_out.info(table)
 
         if not pool_id or not client_id:
-            output.info("\n[yellow]⚠[/yellow]  Cognito not fully configured")
-            output.info("   Run: [cyan]daycog setup[/cyan]")
-            output.info("   Or set env vars: COGNITO_USER_POOL_ID, COGNITO_APP_CLIENT_ID")
+            ccyo_out.info("\n[yellow]⚠[/yellow]  Cognito not fully configured")
+            ccyo_out.info("   Run: [cyan]daycog setup[/cyan]")
+            ccyo_out.info("   Or set env vars: COGNITO_USER_POOL_ID, COGNITO_APP_CLIENT_ID")
 
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
 
@@ -828,7 +828,7 @@ def setup(
     os.environ["AWS_PROFILE"] = resolved_profile
     os.environ["AWS_REGION"] = resolved_region
 
-    output.info("[cyan]Creating Cognito resources...[/cyan]")
+    ccyo_out.info("[cyan]Creating Cognito resources...[/cyan]")
 
     try:
         import boto3
@@ -843,8 +843,8 @@ def setup(
         resolved_mfa = _resolve_mfa_configuration(mfa)
         resolved_logout_urls = [logout_url] if logout_url else []
 
-        output.info(f"[dim]Profile: {resolved_profile}[/dim]")
-        output.info(f"[dim]Region: {resolved_region}[/dim]")
+        ccyo_out.info(f"[dim]Profile: {resolved_profile}[/dim]")
+        ccyo_out.info(f"[dim]Region: {resolved_region}[/dim]")
         cognito = boto3.client("cognito-idp", region_name=resolved_region)
 
         # Check if pool already exists
@@ -852,7 +852,7 @@ def setup(
         existing = [p for p in pools["UserPools"] if p["Name"] == pool_name]
 
         if existing:
-            output.info(f"[yellow]⚠[/yellow]  User pool '{pool_name}' already exists")
+            ccyo_out.info(f"[yellow]⚠[/yellow]  User pool '{pool_name}' already exists")
             pool_id = existing[0]["Id"]
         else:
             # Create user pool
@@ -873,7 +873,7 @@ def setup(
                 UserPoolTags=resolved_tags,
             )
             pool_id = pool["UserPool"]["Id"]
-            output.info(f"[green]✓[/green]  Created user pool: {pool_name}")
+            ccyo_out.info(f"[green]✓[/green]  Created user pool: {pool_name}")
 
         resolved_cognito_domain: Optional[str] = None
         if attach_domain:
@@ -881,13 +881,13 @@ def setup(
             current_domain = pool_info.get("Domain")
             if current_domain:
                 if current_domain != resolved_domain_prefix:
-                    output.info(
+                    ccyo_out.info(
                         f"[yellow]⚠[/yellow]  Pool already has domain '{current_domain}' "
                         f"(requested '{resolved_domain_prefix}'). Keeping existing domain."
                     )
                 resolved_cognito_domain = f"{current_domain}.auth.{resolved_region}.amazoncognito.com"
             else:
-                output.info(f"[cyan]Attaching hosted UI domain: {resolved_domain_prefix}[/cyan]")
+                ccyo_out.info(f"[cyan]Attaching hosted UI domain: {resolved_domain_prefix}[/cyan]")
                 cognito.create_user_pool_domain(UserPoolId=pool_id, Domain=resolved_domain_prefix)
                 resolved_cognito_domain = f"{resolved_domain_prefix}.auth.{resolved_region}.amazoncognito.com"
 
@@ -900,7 +900,7 @@ def setup(
             existing_match = next((c for c in existing_clients if c.get("ClientName") == resolved_client_name), None)
             if existing_match:
                 client_id = existing_match["ClientId"]
-                output.info(f"[yellow]⚠[/yellow]  Reusing app client '{resolved_client_name}': {client_id}")
+                ccyo_out.info(f"[yellow]⚠[/yellow]  Reusing app client '{resolved_client_name}': {client_id}")
 
         if not client_id:
             client = cognito.create_user_pool_client(
@@ -920,7 +920,7 @@ def setup(
                 SupportedIdentityProviders=resolved_idps,
             )
             client_id = client["UserPoolClient"]["ClientId"]
-            output.info(f"[green]✓[/green]  Created app client: {client_id}")
+            ccyo_out.info(f"[green]✓[/green]  Created app client: {client_id}")
 
         # Show configuration
         setup_values = {
@@ -948,11 +948,11 @@ def setup(
             client_name=resolved_client_name,
         )
         if _existing_context_names(pool_context_name, pool_legacy_names):
-            output.info(
+            ccyo_out.info(
                 f"[yellow]⚠[/yellow]  Context already exists in {_config_store_path()}, updating: {pool_context_name}"
             )
         if _existing_context_names(app_context_name, app_legacy_names):
-            output.info(
+            ccyo_out.info(
                 f"[yellow]⚠[/yellow]  Context already exists in {_config_store_path()}, updating: {app_context_name}"
             )
 
@@ -964,34 +964,34 @@ def setup(
             set_active=True,
         )
 
-        output.info("\n[green]✓[/green]  Cognito setup complete")
-        output.info(f"\nSaved Daycog contexts in [cyan]{_config_store_path()}[/cyan]:")
-        output.info(f"   [cyan]{pool_context_name}[/cyan]")
-        output.info(f"   [cyan]{app_context_name}[/cyan] [dim](app, active)[/dim]")
-        output.info("\nValues written to the active Daycog context:")
-        output.info(f"   [cyan]COGNITO_USER_POOL_ID={pool_id}[/cyan]")
-        output.info(f"   [cyan]COGNITO_APP_CLIENT_ID={client_id}[/cyan]")
-        output.info(f"   [cyan]COGNITO_CALLBACK_URL={resolved_callback_url}[/cyan]")
+        ccyo_out.info("\n[green]✓[/green]  Cognito setup complete")
+        ccyo_out.info(f"\nSaved Daycog contexts in [cyan]{_config_store_path()}[/cyan]:")
+        ccyo_out.info(f"   [cyan]{pool_context_name}[/cyan]")
+        ccyo_out.info(f"   [cyan]{app_context_name}[/cyan] [dim](app, active)[/dim]")
+        ccyo_out.info("\nValues written to the active Daycog context:")
+        ccyo_out.info(f"   [cyan]COGNITO_USER_POOL_ID={pool_id}[/cyan]")
+        ccyo_out.info(f"   [cyan]COGNITO_APP_CLIENT_ID={client_id}[/cyan]")
+        ccyo_out.info(f"   [cyan]COGNITO_CALLBACK_URL={resolved_callback_url}[/cyan]")
         if logout_url:
-            output.info(f"   [cyan]COGNITO_LOGOUT_URL={logout_url}[/cyan]")
+            ccyo_out.info(f"   [cyan]COGNITO_LOGOUT_URL={logout_url}[/cyan]")
         if resolved_cognito_domain:
-            output.info(f"   [cyan]COGNITO_DOMAIN={resolved_cognito_domain}[/cyan]")
+            ccyo_out.info(f"   [cyan]COGNITO_DOMAIN={resolved_cognito_domain}[/cyan]")
         if print_exports:
-            output.info("\n[bold]Shell exports:[/bold]")
-            output.info(f'export AWS_PROFILE="{resolved_profile}"')
-            output.info(f'export AWS_REGION="{resolved_region}"')
-            output.info(f'export COGNITO_REGION="{resolved_region}"')
-            output.info(f'export COGNITO_USER_POOL_ID="{pool_id}"')
-            output.info(f'export COGNITO_APP_CLIENT_ID="{client_id}"')
-            output.info(f'export COGNITO_CALLBACK_URL="{resolved_callback_url}"')
-            output.info(f'export COGNITO_CLIENT_NAME="{resolved_client_name}"')
+            ccyo_out.info("\n[bold]Shell exports:[/bold]")
+            ccyo_out.info(f'export AWS_PROFILE="{resolved_profile}"')
+            ccyo_out.info(f'export AWS_REGION="{resolved_region}"')
+            ccyo_out.info(f'export COGNITO_REGION="{resolved_region}"')
+            ccyo_out.info(f'export COGNITO_USER_POOL_ID="{pool_id}"')
+            ccyo_out.info(f'export COGNITO_APP_CLIENT_ID="{client_id}"')
+            ccyo_out.info(f'export COGNITO_CALLBACK_URL="{resolved_callback_url}"')
+            ccyo_out.info(f'export COGNITO_CLIENT_NAME="{resolved_client_name}"')
             if logout_url:
-                output.info(f'export COGNITO_LOGOUT_URL="{logout_url}"')
+                ccyo_out.info(f'export COGNITO_LOGOUT_URL="{logout_url}"')
             if resolved_cognito_domain:
-                output.info(f'export COGNITO_DOMAIN="{resolved_cognito_domain}"')
+                ccyo_out.info(f'export COGNITO_DOMAIN="{resolved_cognito_domain}"')
 
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
 
@@ -1011,10 +1011,10 @@ def config_print(
 ) -> None:
     """Print the resolved Daycog context name and contents."""
     if pool_name and pool_id:
-        output.info("[red]✗[/red]  Provide only one of: --pool-name or --pool-id")
+        ccyo_out.info("[red]✗[/red]  Provide only one of: --pool-name or --pool-id")
         raise typer.Exit(1)
     if (pool_name or pool_id) and not region:
-        output.info("[red]✗[/red]  --region is required when using --pool-name or --pool-id")
+        ccyo_out.info("[red]✗[/red]  --region is required when using --pool-name or --pool-id")
         raise typer.Exit(1)
     context_name = _resolve_context_name_for_print(
         pool_name=pool_name,
@@ -1043,7 +1043,7 @@ def config_create(
     """Create pool/app contexts and update the active context from AWS."""
     resolved_profile, resolved_region = _resolve_profile_region(profile, region)
     if client_name and client_id:
-        output.info("[red]✗[/red]  Provide only one of: --client-name or --client-id")
+        ccyo_out.info("[red]✗[/red]  Provide only one of: --client-name or --client-id")
         raise typer.Exit(1)
 
     try:
@@ -1061,7 +1061,7 @@ def config_create(
     except typer.Exit:
         raise
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
     pool_details = _build_pool_details(pool, resolved_region, selected_client)
@@ -1077,7 +1077,7 @@ def config_create(
         pool_name=pool["pool_name"],
     )
     if get_context_values(pool_context_name):
-        output.info(f"[red]✗[/red]  Context already exists: {pool_context_name}")
+        ccyo_out.info(f"[red]✗[/red]  Context already exists: {pool_context_name}")
         raise typer.Exit(1)
 
     app_context_name: Optional[str] = None
@@ -1091,7 +1091,7 @@ def config_create(
             client_name=selected_client_name,
         )
         if get_context_values(app_context_name):
-            output.info(f"[red]✗[/red]  Context already exists: {app_context_name}")
+            ccyo_out.info(f"[red]✗[/red]  Context already exists: {app_context_name}")
             raise typer.Exit(1)
 
     _write_context(pool_context_name, config_values, legacy_names=pool_legacy_names)
@@ -1103,7 +1103,7 @@ def config_create(
             set_active=True,
         )
     else:
-        output.info("[yellow]⚠[/yellow]  Pool has no app clients; no app-scoped context written")
+        ccyo_out.info("[yellow]⚠[/yellow]  Pool has no app clients; no app-scoped context written")
         set_active_context(pool_context_name)
 
     _print_context(pool_context_name)
@@ -1127,7 +1127,7 @@ def config_update(
     """Update pool/app contexts and refresh the active context from AWS."""
     resolved_profile, resolved_region = _resolve_profile_region(profile, region)
     if client_name and client_id:
-        output.info("[red]✗[/red]  Provide only one of: --client-name or --client-id")
+        ccyo_out.info("[red]✗[/red]  Provide only one of: --client-name or --client-id")
         raise typer.Exit(1)
 
     try:
@@ -1145,7 +1145,7 @@ def config_update(
     except typer.Exit:
         raise
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
     pool_details = _build_pool_details(pool, resolved_region, selected_client)
@@ -1178,7 +1178,7 @@ def config_update(
             set_active=True,
         )
     else:
-        output.info("[yellow]⚠[/yellow]  Pool has no app clients; no app-scoped context written")
+        ccyo_out.info("[yellow]⚠[/yellow]  Pool has no app clients; no app-scoped context written")
         set_active_context(pool_context_name)
 
     _print_context(pool_context_name)
@@ -1213,11 +1213,11 @@ def config_create_all(
     except typer.Exit:
         raise
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
     if not clients:
-        output.info("[yellow]⚠[/yellow]  Pool has no app clients; nothing to create")
+        ccyo_out.info("[yellow]⚠[/yellow]  Pool has no app clients; nothing to create")
         return
 
     for client in clients:
@@ -1242,7 +1242,7 @@ def config_create_all(
         if wrote:
             _print_context(app_context_name)
         else:
-            output.info(f"[yellow]⚠[/yellow]  Skipping existing context: {app_context_name}")
+            ccyo_out.info(f"[yellow]⚠[/yellow]  Skipping existing context: {app_context_name}")
 
     if default_client:
         selected_client = _describe_client(cognito, pool["pool_id"], client_name=default_client)
@@ -1291,10 +1291,10 @@ def list_pools(
                 table.add_row(pool.get("Name", ""), pool.get("Id", ""))
                 count += 1
 
-        output.info(table)
-        output.info(f"\n[dim]Total: {count} pools[/dim]")
+        ccyo_out.info(table)
+        ccyo_out.info(f"\n[dim]Total: {count} pools[/dim]")
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
 
@@ -1321,10 +1321,10 @@ def list_apps(
         for client in clients:
             table.add_row(client.get("ClientName", ""), client.get("ClientId", ""))
 
-        output.info(table)
-        output.info(f"\n[dim]Total: {len(clients)} app clients[/dim]")
+        ccyo_out.info(table)
+        ccyo_out.info(f"\n[dim]Total: {len(clients)} app clients[/dim]")
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
 
@@ -1360,7 +1360,7 @@ def add_app(
 
         existing = cognito.list_user_pool_clients(UserPoolId=pool_id, MaxResults=60).get("UserPoolClients", [])
         if any(c.get("ClientName") == app_name for c in existing):
-            output.info(f"[red]✗[/red]  App client already exists: {app_name}")
+            ccyo_out.info(f"[red]✗[/red]  App client already exists: {app_name}")
             raise typer.Exit(1)
 
         client = cognito.create_user_pool_client(
@@ -1414,10 +1414,10 @@ def add_app(
             )
             _write_context(pool_context_name, app_values, legacy_names=pool_legacy_names)
 
-        output.info(f"[green]✓[/green]  Created app client: {app_name} ({client_id})")
-        output.info(f"[cyan]{app_context_name}[/cyan] in [dim]{_config_store_path()}[/dim]")
+        ccyo_out.info(f"[green]✓[/green]  Created app client: {app_name} ({client_id})")
+        ccyo_out.info(f"[cyan]{app_context_name}[/cyan] in [dim]{_config_store_path()}[/dim]")
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
 
@@ -1440,7 +1440,7 @@ def edit_app(
 ) -> None:
     """Edit an existing app client in a pool."""
     if not app_name and not client_id:
-        output.info("[red]✗[/red]  Provide one of: --app-name or --client-id")
+        ccyo_out.info("[red]✗[/red]  Provide one of: --app-name or --client-id")
         raise typer.Exit(1)
 
     resolved_profile, resolved_region = _resolve_profile_region(profile, region)
@@ -1512,10 +1512,10 @@ def edit_app(
             )
             _write_context(pool_context_name, app_values, legacy_names=pool_legacy_names)
 
-        output.info(f"[green]✓[/green]  Updated app client: {final_name} ({found['client_id']})")
-        output.info(f"[cyan]{app_context_name}[/cyan] in [dim]{_config_store_path()}[/dim]")
+        ccyo_out.info(f"[green]✓[/green]  Updated app client: {final_name} ({found['client_id']})")
+        ccyo_out.info(f"[cyan]{app_context_name}[/cyan] in [dim]{_config_store_path()}[/dim]")
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
 
@@ -1533,7 +1533,7 @@ def remove_app(
 ) -> None:
     """Remove an app client from a pool."""
     if not app_name and not client_id:
-        output.info("[red]✗[/red]  Provide one of: --app-name or --client-id")
+        ccyo_out.info("[red]✗[/red]  Provide one of: --app-name or --client-id")
         raise typer.Exit(1)
 
     resolved_profile, resolved_region = _resolve_profile_region(profile, region)
@@ -1546,16 +1546,16 @@ def remove_app(
         found = _find_client(cognito, pool_id, client_name=app_name, client_id=client_id)
 
         if not force:
-            output.info("[red]⚠  WARNING: This will delete app client:[/red]")
-            output.info(f"   Pool: {pool_name} ({pool_id})")
-            output.info(f"   App: {found['client_name']} ({found['client_id']})")
+            ccyo_out.info("[red]⚠  WARNING: This will delete app client:[/red]")
+            ccyo_out.info(f"   Pool: {pool_name} ({pool_id})")
+            ccyo_out.info(f"   App: {found['client_name']} ({found['client_id']})")
             confirm = typer.confirm("Are you absolutely sure?")
             if not confirm:
-                output.info("[dim]Cancelled[/dim]")
+                ccyo_out.info("[dim]Cancelled[/dim]")
                 return
 
         cognito.delete_user_pool_client(UserPoolId=pool_id, ClientId=found["client_id"])
-        output.info(f"[green]✓[/green]  Deleted app client: {found['client_name']} ({found['client_id']})")
+        ccyo_out.info(f"[green]✓[/green]  Deleted app client: {found['client_name']} ({found['client_id']})")
 
         app_context_name, app_legacy_names = _context_targets(
             pool_id,
@@ -1566,9 +1566,9 @@ def remove_app(
         if delete_config:
             removed = _remove_contexts([app_context_name, *app_legacy_names])
             for name in removed:
-                output.info(f"[dim]Removed context: {name}[/dim]")
+                ccyo_out.info(f"[dim]Removed context: {name}[/dim]")
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
 
@@ -1590,7 +1590,7 @@ def add_google_idp(
 ) -> None:
     """Configure Google IdP on a pool and enable it on an app client."""
     if not app_name and not client_id:
-        output.info("[red]✗[/red]  Provide one of: --app-name or --client-id")
+        ccyo_out.info("[red]✗[/red]  Provide one of: --app-name or --client-id")
         raise typer.Exit(1)
 
     resolved_profile, resolved_region = _resolve_profile_region(profile, region)
@@ -1632,7 +1632,7 @@ def add_google_idp(
                 ProviderDetails=provider_details,
                 AttributeMapping=attribute_mapping,
             )
-            output.info("[green]✓[/green]  Updated Google identity provider")
+            ccyo_out.info("[green]✓[/green]  Updated Google identity provider")
         else:
             cognito.create_identity_provider(
                 UserPoolId=pool_id,
@@ -1641,7 +1641,7 @@ def add_google_idp(
                 ProviderDetails=provider_details,
                 AttributeMapping=attribute_mapping,
             )
-            output.info("[green]✓[/green]  Created Google identity provider")
+            ccyo_out.info("[green]✓[/green]  Created Google identity provider")
 
         # Ensure app client allows Google provider
         update_kwargs = build_user_pool_client_update_request(
@@ -1656,12 +1656,12 @@ def add_google_idp(
         )
         update_kwargs["SupportedIdentityProviders"] = supported
         cognito.update_user_pool_client(**update_kwargs)
-        output.info(
+        ccyo_out.info(
             f"[green]✓[/green]  Enabled Google provider on app client: {app['client_name']} ({app['client_id']})"
         )
 
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
 
@@ -1758,7 +1758,7 @@ def setup_with_google(
         scopes=google_scopes,
     )
 
-    output.info("[green]✓[/green]  Setup with Google IdP complete")
+    ccyo_out.info("[green]✓[/green]  Setup with Google IdP complete")
 
 
 @cognito_app.command("delete-pool")
@@ -1774,7 +1774,7 @@ def delete_pool(
 ) -> None:
     """Delete a Cognito user pool by name or ID."""
     if not pool_name and not pool_id:
-        output.info("[red]✗[/red]  Provide one of: [cyan]--pool-name[/cyan] or [cyan]--pool-id[/cyan]")
+        ccyo_out.info("[red]✗[/red]  Provide one of: [cyan]--pool-name[/cyan] or [cyan]--pool-id[/cyan]")
         raise typer.Exit(1)
 
     resolved_profile, resolved_region = _resolve_profile_region(profile, region)
@@ -1793,19 +1793,19 @@ def delete_pool(
         domain_name = domain or custom_domain
 
         if not force:
-            output.info("[red]⚠  WARNING: This will delete the Cognito pool:[/red]")
-            output.info(f"   Pool Name: {resolved_pool_name}")
-            output.info(f"   Pool ID: {resolved_pool_id}")
+            ccyo_out.info("[red]⚠  WARNING: This will delete the Cognito pool:[/red]")
+            ccyo_out.info(f"   Pool Name: {resolved_pool_name}")
+            ccyo_out.info(f"   Pool ID: {resolved_pool_id}")
             if domain_name:
-                output.info(f"   Domain: {domain_name}")
-            output.info("   [red]All users will be permanently deleted![/red]")
+                ccyo_out.info(f"   Domain: {domain_name}")
+            ccyo_out.info("   [red]All users will be permanently deleted![/red]")
             confirm = typer.confirm("Are you absolutely sure?")
             if not confirm:
-                output.info("[dim]Cancelled[/dim]")
+                ccyo_out.info("[dim]Cancelled[/dim]")
                 return
 
         if delete_domain_first and domain_name:
-            output.info(f"[cyan]Deleting pool domain {domain_name}...[/cyan]")
+            ccyo_out.info(f"[cyan]Deleting pool domain {domain_name}...[/cyan]")
             cognito.delete_user_pool_domain(UserPoolId=resolved_pool_id, Domain=domain_name)
             # AWS can take a few seconds to detach domain before pool deletion is accepted.
             for _ in range(12):
@@ -1815,16 +1815,16 @@ def delete_pool(
                 time.sleep(1)
 
         cognito.delete_user_pool(UserPoolId=resolved_pool_id)
-        output.info(f"[green]✓[/green]  Deleted Cognito pool: {resolved_pool_name} ({resolved_pool_id})")
+        ccyo_out.info(f"[green]✓[/green]  Deleted Cognito pool: {resolved_pool_name} ({resolved_pool_id})")
         removed_contexts = _cleanup_pool_contexts(
             resolved_pool_name,
             resolved_region,
             resolved_pool_id,
         )
         for name in removed_contexts:
-            output.info(f"[dim]Removed context: {name}[/dim]")
+            ccyo_out.info(f"[dim]Removed context: {name}[/dim]")
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
 
@@ -1847,7 +1847,7 @@ def fix_auth_flows():
         region = _get_cognito_region()
         cognito = boto3.client("cognito-idp", region_name=region)
 
-        output.info(f"[cyan]Updating app client {client_id}...[/cyan]")
+        ccyo_out.info(f"[cyan]Updating app client {client_id}...[/cyan]")
 
         update_kwargs = build_user_pool_client_update_request(
             cognito,
@@ -1862,13 +1862,13 @@ def fix_auth_flows():
         update_kwargs["ExplicitAuthFlows"] = required_flows
         cognito.update_user_pool_client(**update_kwargs)
 
-        output.info("[green]✓[/green]  Enabled auth flows:")
-        output.info("     - ALLOW_USER_PASSWORD_AUTH")
-        output.info("     - ALLOW_ADMIN_USER_PASSWORD_AUTH")
-        output.info("     - ALLOW_REFRESH_TOKEN_AUTH")
+        ccyo_out.info("[green]✓[/green]  Enabled auth flows:")
+        ccyo_out.info("     - ALLOW_USER_PASSWORD_AUTH")
+        ccyo_out.info("     - ALLOW_ADMIN_USER_PASSWORD_AUTH")
+        ccyo_out.info("     - ALLOW_REFRESH_TOKEN_AUTH")
 
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
 
@@ -1892,10 +1892,10 @@ def set_password(
             Permanent=True,
         )
 
-        output.info(f"[green]✓[/green]  Password set for: {email}")
+        ccyo_out.info(f"[green]✓[/green]  Password set for: {email}")
 
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
 
@@ -1914,16 +1914,16 @@ def ensure_group(
         for page in paginator.paginate(UserPoolId=pool_id):
             for group in page.get("Groups", []):
                 if group.get("GroupName") == group_name:
-                    output.info(f"[green]✓[/green]  Group already exists: {group_name}")
+                    ccyo_out.info(f"[green]✓[/green]  Group already exists: {group_name}")
                     return
 
         params: Dict[str, Any] = {"UserPoolId": pool_id, "GroupName": group_name}
         if description.strip():
             params["Description"] = description.strip()
         cognito.create_group(**params)
-        output.info(f"[green]✓[/green]  Created group: {group_name}")
+        ccyo_out.info(f"[green]✓[/green]  Created group: {group_name}")
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
 
@@ -1943,9 +1943,9 @@ def add_user_to_group(
             Username=email,
             GroupName=group_name,
         )
-        output.info(f"[green]✓[/green]  Added {email} to group: {group_name}")
+        ccyo_out.info(f"[green]✓[/green]  Added {email} to group: {group_name}")
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
 
@@ -1964,7 +1964,7 @@ def set_user_attributes(
     pool_id = _get_pool_id()
     attributes = _parse_attributes(attribute)
     if not attributes:
-        output.info("[red]✗[/red]  Provide at least one --attribute Name=Value pair")
+        ccyo_out.info("[red]✗[/red]  Provide at least one --attribute Name=Value pair")
         raise typer.Exit(1)
 
     try:
@@ -1974,11 +1974,11 @@ def set_user_attributes(
             Username=email,
             UserAttributes=attributes,
         )
-        output.info(f"[green]✓[/green]  Updated attributes for: {email}")
+        ccyo_out.info(f"[green]✓[/green]  Updated attributes for: {email}")
         for entry in attributes:
-            output.info(f"   {entry['Name']}={entry['Value']}")
+            ccyo_out.info(f"   {entry['Name']}={entry['Value']}")
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
 
@@ -2001,8 +2001,8 @@ def _get_pool_id() -> str:
             pass
 
     # Not configured anywhere
-    output.info("[red]✗[/red]  Cognito User Pool ID not configured")
-    output.info("   Or use --config NAME with DAYCOG_<NAME>_USER_POOL_ID")
+    ccyo_out.info("[red]✗[/red]  Cognito User Pool ID not configured")
+    ccyo_out.info("   Or use --config NAME with DAYCOG_<NAME>_USER_POOL_ID")
     raise typer.Exit(1)
 
 
@@ -2024,8 +2024,8 @@ def _get_client_id() -> str:
             pass
 
     # Not configured anywhere
-    output.info("[red]✗[/red]  Cognito App Client ID not configured")
-    output.info("   Or use --config NAME with DAYCOG_<NAME>_APP_CLIENT_ID")
+    ccyo_out.info("[red]✗[/red]  Cognito App Client ID not configured")
+    ccyo_out.info("   Or use --config NAME with DAYCOG_<NAME>_APP_CLIENT_ID")
     raise typer.Exit(1)
 
 
@@ -2090,7 +2090,7 @@ def add_user(
             user_attributes.append({"Name": "email_verified", "Value": "true"})
 
         cognito.admin_create_user(**create_params)
-        output.info(f"[green]✓[/green]  Created user: {email}")
+        ccyo_out.info(f"[green]✓[/green]  Created user: {email}")
 
         # If --no-verify, set permanent password immediately
         if no_verify and password:
@@ -2100,18 +2100,18 @@ def add_user(
                 Password=password,
                 Permanent=True,
             )
-            output.info("[green]✓[/green]  Password set (permanent)")
+            ccyo_out.info("[green]✓[/green]  Password set (permanent)")
         elif is_temp:
-            output.info(f"\n[yellow]Temporary password:[/yellow] {temp_password}")
-            output.info("[dim]User must change password on first login[/dim]")
+            ccyo_out.info(f"\n[yellow]Temporary password:[/yellow] {temp_password}")
+            ccyo_out.info("[dim]User must change password on first login[/dim]")
         else:
-            output.info("[green]✓[/green]  Password set (temporary - must change on first login)")
+            ccyo_out.info("[green]✓[/green]  Password set (temporary - must change on first login)")
 
     except cognito.exceptions.UsernameExistsException:
-        output.info(f"[red]✗[/red]  User already exists: {email}")
+        ccyo_out.info(f"[red]✗[/red]  User already exists: {email}")
         raise typer.Exit(1)
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
 
@@ -2162,11 +2162,11 @@ def list_users(
                 table.add_row(email, customer_id, status_color, str(created), enabled)
                 user_count += 1
 
-        output.info(table)
-        output.info(f"\n[dim]Total: {user_count} users[/dim]")
+        ccyo_out.info(table)
+        ccyo_out.info(f"\n[dim]Total: {user_count} users[/dim]")
 
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
 
@@ -2187,7 +2187,7 @@ def export_users(
         region = _get_cognito_region()
         cognito = boto3.client("cognito-idp", region_name=region)
 
-        output.info(f"[cyan]Exporting users from pool {pool_id}...[/cyan]")
+        ccyo_out.info(f"[cyan]Exporting users from pool {pool_id}...[/cyan]")
 
         users = []
         paginator = cognito.get_paginator("list_users")
@@ -2218,10 +2218,10 @@ def export_users(
         with open(output, "w") as f:
             json.dump(export_data, f, indent=2, default=str)
 
-        output.info(f"[green]✓[/green]  Exported {len(users)} users to: {output}")
+        ccyo_out.info(f"[green]✓[/green]  Exported {len(users)} users to: {output}")
 
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
 
@@ -2235,10 +2235,10 @@ def delete_user(
     pool_id = _get_pool_id()
 
     if not force:
-        output.info(f"[yellow]⚠[/yellow]  This will delete user: {email}")
+        ccyo_out.info(f"[yellow]⚠[/yellow]  This will delete user: {email}")
         confirm = typer.confirm("Are you sure?")
         if not confirm:
-            output.info("[dim]Cancelled[/dim]")
+            ccyo_out.info("[dim]Cancelled[/dim]")
             return
 
     try:
@@ -2248,10 +2248,10 @@ def delete_user(
         cognito = boto3.client("cognito-idp", region_name=region)
 
         cognito.admin_delete_user(UserPoolId=pool_id, Username=email)
-        output.info(f"[green]✓[/green]  Deleted user: {email}")
+        ccyo_out.info(f"[green]✓[/green]  Deleted user: {email}")
 
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
 
@@ -2264,10 +2264,10 @@ def delete_all_users(
     pool_id = _get_pool_id()
 
     if not force:
-        output.info(f"[red]⚠  WARNING: This will delete ALL users from pool {pool_id}![/red]")
+        ccyo_out.info(f"[red]⚠  WARNING: This will delete ALL users from pool {pool_id}![/red]")
         confirm = typer.confirm("Are you absolutely sure?")
         if not confirm:
-            output.info("[dim]Cancelled[/dim]")
+            ccyo_out.info("[dim]Cancelled[/dim]")
             return
 
     try:
@@ -2276,7 +2276,7 @@ def delete_all_users(
         region = _get_cognito_region()
         cognito = boto3.client("cognito-idp", region_name=region)
 
-        output.info(f"[cyan]Deleting all users from pool {pool_id}...[/cyan]")
+        ccyo_out.info(f"[cyan]Deleting all users from pool {pool_id}...[/cyan]")
 
         deleted_count = 0
         paginator = cognito.get_paginator("list_users")
@@ -2286,15 +2286,15 @@ def delete_all_users(
                 username = user.get("Username")
                 try:
                     cognito.admin_delete_user(UserPoolId=pool_id, Username=username)
-                    output.info(f"[dim]  Deleted: {username}[/dim]")
+                    ccyo_out.info(f"[dim]  Deleted: {username}[/dim]")
                     deleted_count += 1
                 except Exception as e:
-                    output.info(f"[yellow]  Failed to delete {username}: {e}[/yellow]")
+                    ccyo_out.info(f"[yellow]  Failed to delete {username}: {e}[/yellow]")
 
-        output.info(f"\n[green]✓[/green]  Deleted {deleted_count} users")
+        ccyo_out.info(f"\n[green]✓[/green]  Deleted {deleted_count} users")
 
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
 
@@ -2333,10 +2333,10 @@ def teardown(
                     break
 
         if not pool_id:
-            output.info("[red]✗[/red]  No pool ID found")
-            output.info("   Set via environment: [cyan]export COGNITO_USER_POOL_ID=...[/cyan]")
-            output.info("   Or use --config NAME with DAYCOG_<NAME>_USER_POOL_ID")
-            output.info("   Or use --name to search by pool name")
+            ccyo_out.info("[red]✗[/red]  No pool ID found")
+            ccyo_out.info("   Set via environment: [cyan]export COGNITO_USER_POOL_ID=...[/cyan]")
+            ccyo_out.info("   Or use --config NAME with DAYCOG_<NAME>_USER_POOL_ID")
+            ccyo_out.info("   Or use --name to search by pool name")
             raise typer.Exit(1)
 
         # Get pool info for confirmation
@@ -2344,24 +2344,24 @@ def teardown(
         pool_name_actual = pool_info["UserPool"]["Name"]
 
         if not force:
-            output.info("[red]⚠  WARNING: This will delete the Cognito pool:[/red]")
-            output.info(f"   Pool ID: {pool_id}")
-            output.info(f"   Pool Name: {pool_name_actual}")
-            output.info("   [red]All users will be permanently deleted![/red]")
+            ccyo_out.info("[red]⚠  WARNING: This will delete the Cognito pool:[/red]")
+            ccyo_out.info(f"   Pool ID: {pool_id}")
+            ccyo_out.info(f"   Pool Name: {pool_name_actual}")
+            ccyo_out.info("   [red]All users will be permanently deleted![/red]")
             confirm = typer.confirm("Are you absolutely sure?")
             if not confirm:
-                output.info("[dim]Cancelled[/dim]")
+                ccyo_out.info("[dim]Cancelled[/dim]")
                 return
 
-        output.info(f"[cyan]Deleting pool {pool_id}...[/cyan]")
+        ccyo_out.info(f"[cyan]Deleting pool {pool_id}...[/cyan]")
         cognito.delete_user_pool(UserPoolId=pool_id)
-        output.info(f"[green]✓[/green]  Deleted Cognito pool: {pool_name_actual} ({pool_id})")
-        output.info("\n[yellow]Remember to unset environment variables:[/yellow]")
-        output.info("   unset COGNITO_USER_POOL_ID")
-        output.info("   unset COGNITO_APP_CLIENT_ID")
+        ccyo_out.info(f"[green]✓[/green]  Deleted Cognito pool: {pool_name_actual} ({pool_id})")
+        ccyo_out.info("\n[yellow]Remember to unset environment variables:[/yellow]")
+        ccyo_out.info("   unset COGNITO_USER_POOL_ID")
+        ccyo_out.info("   unset COGNITO_APP_CLIENT_ID")
 
     except Exception as e:
-        output.info(f"[red]✗[/red]  Error: {e}")
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
 
@@ -2378,30 +2378,30 @@ def setup_google(
     """
     redirect_uri = f"http://localhost:{redirect_port}/auth/google/callback"
 
-    output.info("\n[bold cyan]Google OAuth Configuration[/bold cyan]\n")
-    output.info("Set these environment variables:\n")
+    ccyo_out.info("\n[bold cyan]Google OAuth Configuration[/bold cyan]\n")
+    ccyo_out.info("Set these environment variables:\n")
 
     if _config_name:
         name_upper = _config_name.upper()
-        output.info(f'  export DAYCOG_{name_upper}_GOOGLE_CLIENT_ID="{google_client_id}"')
-        output.info(f'  export DAYCOG_{name_upper}_GOOGLE_CLIENT_SECRET="{google_client_secret}"')
+        ccyo_out.info(f'  export DAYCOG_{name_upper}_GOOGLE_CLIENT_ID="{google_client_id}"')
+        ccyo_out.info(f'  export DAYCOG_{name_upper}_GOOGLE_CLIENT_SECRET="{google_client_secret}"')
     else:
-        output.info(f'  export GOOGLE_CLIENT_ID="{google_client_id}"')
-        output.info(f'  export GOOGLE_CLIENT_SECRET="{google_client_secret}"')
+        ccyo_out.info(f'  export GOOGLE_CLIENT_ID="{google_client_id}"')
+        ccyo_out.info(f'  export GOOGLE_CLIENT_SECRET="{google_client_secret}"')
 
-    output.info("\n[dim]Redirect URI (register in Google Cloud Console):[/dim]")
-    output.info(f"  {redirect_uri}\n")
+    ccyo_out.info("\n[dim]Redirect URI (register in Google Cloud Console):[/dim]")
+    ccyo_out.info(f"  {redirect_uri}\n")
 
     # Show a quick integration snippet
-    output.info("[bold]Quick integration example:[/bold]\n")
-    output.info("[dim]from daylily_cognito import ([/dim]")
-    output.info("[dim]    build_google_authorization_url,[/dim]")
-    output.info("[dim]    exchange_google_code_for_tokens,[/dim]")
-    output.info("[dim]    fetch_google_userinfo,[/dim]")
-    output.info("[dim]    auto_create_cognito_user_from_google,[/dim]")
-    output.info("[dim])[/dim]\n")
+    ccyo_out.info("[bold]Quick integration example:[/bold]\n")
+    ccyo_out.info("[dim]from daylily_cognito import ([/dim]")
+    ccyo_out.info("[dim]    build_google_authorization_url,[/dim]")
+    ccyo_out.info("[dim]    exchange_google_code_for_tokens,[/dim]")
+    ccyo_out.info("[dim]    fetch_google_userinfo,[/dim]")
+    ccyo_out.info("[dim]    auto_create_cognito_user_from_google,[/dim]")
+    ccyo_out.info("[dim])[/dim]\n")
 
-    output.info("[green]✓[/green] Configuration displayed. Set the env vars above to enable Google OAuth.\n")
+    ccyo_out.info("[green]✓[/green] Configuration displayed. Set the env vars above to enable Google OAuth.\n")
 
 
 from cli_core_yo.registry import CommandRegistry
