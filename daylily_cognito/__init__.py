@@ -33,6 +33,7 @@ from .google import (
     generate_state_token,
 )
 from .jwks import JWKSCache
+from .m2m import verify_m2m_token_with_jwks
 from .oauth import (
     build_authorization_url,
     build_logout_url,
@@ -93,6 +94,8 @@ __all__ = [
     "verify_jwt_claims_unverified_signature",
     # JWKS
     "JWKSCache",
+    # M2M
+    "verify_m2m_token_with_jwks",
 ]
 
 try:

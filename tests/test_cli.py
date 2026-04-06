@@ -650,6 +650,55 @@ class TestFlagDrivenAwsCommands:
         assert _read_yaml(cfg)["COGNITO_APP_CLIENT_ID"] == before["COGNITO_APP_CLIENT_ID"]
 
     @mock.patch("boto3.Session")
+    def test_add_m2m_app_creates_client_credentials_client(
+        self,
+        mock_session_cls: mock.MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        app = _make_app(monkeypatch, tmp_path)
+        client = _mock_cognito_client()
+        client.get_paginator.return_value.paginate.return_value = [
+            {"UserPools": [{"Name": "pool-a", "Id": "pool-123"}]}
+        ]
+        client.create_user_pool_client.return_value = {
+            "UserPoolClient": {"ClientId": "m2m-client", "ClientSecret": "m2m-secret"}
+        }
+        _configure_session(mock_session_cls, client)
+
+        result = runner.invoke(
+            app,
+            [
+                "add-m2m-app",
+                "--pool-name",
+                "pool-a",
+                "--app-name",
+                "atlas",
+                "--scopes",
+                "atlas.read,atlas.write",
+                "--json",
+            ],
+            env={"AWS_PROFILE": "env-profile", "AWS_REGION": "us-east-1"},
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload["pool_id"] == "pool-123"
+        assert payload["client_name"] == "atlas"
+        assert payload["client_id"] == "m2m-client"
+        assert payload["client_secret"] == "m2m-secret"
+        assert payload["scopes"] == ["atlas.read", "atlas.write"]
+
+        kwargs = client.create_user_pool_client.call_args.kwargs
+        assert kwargs["GenerateSecret"] is True
+        assert kwargs["AllowedOAuthFlows"] == ["client_credentials"]
+        assert kwargs["AllowedOAuthScopes"] == ["atlas.read", "atlas.write"]
+        assert kwargs["AllowedOAuthFlowsUserPoolClient"] is True
+        assert "CallbackURLs" not in kwargs
+        assert "LogoutURLs" not in kwargs
+        assert "ExplicitAuthFlows" not in kwargs
+
+    @mock.patch("boto3.Session")
     def test_edit_app_set_default_only_prompts_for_manual_config_refresh(
         self,
         mock_session_cls: mock.MagicMock,

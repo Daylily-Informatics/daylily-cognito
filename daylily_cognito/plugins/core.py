@@ -546,6 +546,8 @@ def status() -> None:
             )
 
     except Exception as e:
+        if isinstance(e, typer.Exit):
+            raise
         ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
@@ -746,6 +748,8 @@ def setup(
             ccyo_out.info(f'export AWS_REGION="{resolved_region}"')
 
     except Exception as e:
+        if isinstance(e, typer.Exit):
+            raise
         ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
@@ -1011,6 +1015,66 @@ def add_app(
         ccyo_out.info(f"[green]✓[/green]  Created app client: {app_name} ({client_id})")
         if set_default:
             ccyo_out.info("[dim]Run daycog auth-config update if you want the config file to point at this app.[/dim]")
+    except Exception as e:
+        ccyo_out.info(f"[red]✗[/red]  Error: {e}")
+        raise typer.Exit(1)
+
+
+@cognito_app.command("add-m2m-app")
+def add_m2m_app(
+    pool_name: str = typer.Option(..., "--pool-name", help="Cognito pool name"),
+    app_name: str = typer.Option(..., "--app-name", help="External app client name"),
+    profile: Optional[str] = typer.Option(None, "--profile", help="AWS profile to use"),
+    region: Optional[str] = typer.Option(None, "--region", help="AWS region to use"),
+    scopes: str = typer.Option(..., "--scopes", help="Comma-separated OAuth scopes for client_credentials"),
+    emit_json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
+) -> None:
+    """Create a client_credentials app client for an external service."""
+    resolved_profile, resolved_region = _resolve_profile_region(profile, region)
+    resolved_scopes = _parse_csv(scopes)
+    if not resolved_scopes:
+        ccyo_out.info("[red]✗[/red]  Provide at least one scope with --scopes")
+        raise typer.Exit(1)
+
+    try:
+        import boto3
+
+        session = boto3.Session(profile_name=resolved_profile, region_name=resolved_region)
+        cognito = session.client("cognito-idp")
+        pool_id = _find_pool_id_by_name(cognito, pool_name)
+
+        existing_clients = _list_pool_clients(cognito, pool_id)
+        if any(client.get("ClientName") == app_name for client in existing_clients):
+            ccyo_out.info(f"[red]✗[/red]  App client already exists: {app_name}")
+            raise typer.Exit(1)
+
+        client = cognito.create_user_pool_client(
+            UserPoolId=pool_id,
+            ClientName=app_name,
+            GenerateSecret=True,
+            AllowedOAuthFlows=["client_credentials"],
+            AllowedOAuthScopes=resolved_scopes,
+            AllowedOAuthFlowsUserPoolClient=True,
+        )
+        created = client["UserPoolClient"]
+        client_id = str(created["ClientId"])
+        client_secret = str(created.get("ClientSecret", ""))
+
+        if emit_json:
+            payload = {
+                "pool_id": pool_id,
+                "client_name": app_name,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "scopes": resolved_scopes,
+            }
+            sys.stdout.write(json.dumps(payload, sort_keys=True) + "\n")
+            return
+
+        ccyo_out.info(f"[green]✓[/green]  Created M2M app client: {app_name} ({client_id})")
+        ccyo_out.info(f"   Pool ID: {pool_id}")
+        ccyo_out.info(f"   Allowed scopes: {', '.join(resolved_scopes)}")
+        ccyo_out.info(f"   Client secret: {client_secret}")
     except Exception as e:
         ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
