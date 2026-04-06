@@ -372,10 +372,13 @@ def _config_payload(path: Path, values: Dict[str, str]) -> Dict[str, Any]:
     return {"config_path": str(path), "values": values}
 
 
-def _print_config(path: Path, values: Dict[str, str], *, as_json: bool = False) -> None:
+def _print_config(path: Path, values: Dict[str, str], *, as_json: bool | None = None) -> None:
     """Print the effective flat config file."""
+    from cli_core_yo.runtime import get_context
+
     payload = _config_payload(path, values)
-    if as_json:
+    json_mode = as_json if as_json is not None else get_context().json_mode
+    if json_mode:
         ccyo_out.emit_json(payload)
         return
 
@@ -810,22 +813,20 @@ def _resolve_config_values_from_aws(
 
 
 @config_app.command("print")
-def config_print(
-    as_json: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
-) -> None:
-    """Print the effective auth config file."""
+def config_print() -> None:
+    """Print the effective auth config file. Use global --json for machine-readable output."""
     try:
         path = active_config_path()
         values = load_config_file(path, require_required_keys=True)
     except ConfigError as exc:
         _handle_config_error(exc)
-    _print_config(path, values, as_json=as_json)
+    _print_config(path, values)
 
 
 @config_app.command("create")
 def config_create(
     pool_name: Optional[str] = typer.Option(
-        None, "--pool-name", "--poor-name", help="Pool name to resolve and write config for"
+        None, "--pool-name", help="Pool name to resolve and write config for"
     ),
     pool_id: Optional[str] = typer.Option(None, "--pool-id", help="Pool ID to resolve and write config for"),
     client_name: Optional[str] = typer.Option(None, "--client-name", help="App client name to write config for"),
@@ -860,7 +861,7 @@ def config_create(
 @config_app.command("update")
 def config_update(
     pool_name: Optional[str] = typer.Option(
-        None, "--pool-name", "--poor-name", help="Pool name to resolve and write config for"
+        None, "--pool-name", help="Pool name to resolve and write config for"
     ),
     pool_id: Optional[str] = typer.Option(None, "--pool-id", help="Pool ID to resolve and write config for"),
     client_name: Optional[str] = typer.Option(None, "--client-name", help="App client name to write config for"),
