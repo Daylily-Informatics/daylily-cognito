@@ -829,9 +829,7 @@ def config_print() -> None:
 
 @config_app.command("create")
 def config_create(
-    pool_name: Optional[str] = typer.Option(
-        None, "--pool-name", help="Pool name to resolve and write config for"
-    ),
+    pool_name: Optional[str] = typer.Option(None, "--pool-name", help="Pool name to resolve and write config for"),
     pool_id: Optional[str] = typer.Option(None, "--pool-id", help="Pool ID to resolve and write config for"),
     client_name: Optional[str] = typer.Option(None, "--client-name", help="App client name to write config for"),
     client_id: Optional[str] = typer.Option(None, "--client-id", help="App client ID to write config for"),
@@ -864,9 +862,7 @@ def config_create(
 
 @config_app.command("update")
 def config_update(
-    pool_name: Optional[str] = typer.Option(
-        None, "--pool-name", help="Pool name to resolve and write config for"
-    ),
+    pool_name: Optional[str] = typer.Option(None, "--pool-name", help="Pool name to resolve and write config for"),
     pool_id: Optional[str] = typer.Option(None, "--pool-id", help="Pool ID to resolve and write config for"),
     client_name: Optional[str] = typer.Option(None, "--client-name", help="App client name to write config for"),
     client_id: Optional[str] = typer.Option(None, "--client-id", help="App client ID to write config for"),
