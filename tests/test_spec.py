@@ -38,7 +38,7 @@ EXTRA_KEY: nope
 """
         )
 
-        assert "Legacy context-store YAML is not supported; use a flat config file instead." in errors
+        assert "Context-store YAML format is not supported; use a flat config file instead." in errors
         assert "Unknown config keys: EXTRA_KEY" in errors
         assert "COGNITO_REGION must be a scalar value" in errors
         assert "Missing required key: COGNITO_USER_POOL_ID" in errors
