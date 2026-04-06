@@ -221,7 +221,9 @@ class TestRuntimeResolution:
 
         assert runtime.aws_region == "eu-west-1"
 
-    def test_resolve_runtime_config_can_skip_missing_file(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_resolve_runtime_config_can_skip_missing_file(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         path = tmp_path / "missing.yaml"
         _set_active_config(monkeypatch, path)
         monkeypatch.setenv("AWS_PROFILE", "env-profile")
@@ -234,7 +236,9 @@ class TestRuntimeResolution:
         assert runtime.aws_profile == "env-profile"
         assert runtime.aws_region == "us-west-2"
 
-    def test_resolve_runtime_config_errors_without_region(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_resolve_runtime_config_errors_without_region(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         path = _write_yaml(
             tmp_path / "config.yaml",
             {

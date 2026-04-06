@@ -83,7 +83,9 @@ class RuntimeConfig:
     def require_aws_profile(self) -> str:
         if self.aws_profile:
             return self.aws_profile
-        raise ConfigError("AWS profile not set. Pass --profile, set AWS_PROFILE, or add AWS_PROFILE to the config file.")
+        raise ConfigError(
+            "AWS profile not set. Pass --profile, set AWS_PROFILE, or add AWS_PROFILE to the config file."
+        )
 
     def require(self, key: str) -> str:
         value = self.values.get(key, "").strip()
@@ -173,7 +175,9 @@ def resolve_runtime_config(
         or str(os.environ.get("AWS_REGION") or "").strip()
     )
     if not resolved_region:
-        raise ConfigError("AWS region not set. Pass --region, set AWS_REGION, or add COGNITO_REGION/AWS_REGION to the config file.")
+        raise ConfigError(
+            "AWS region not set. Pass --region, set AWS_REGION, or add COGNITO_REGION/AWS_REGION to the config file."
+        )
 
     resolved_profile = (
         (profile or "").strip()

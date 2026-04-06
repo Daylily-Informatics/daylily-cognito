@@ -68,17 +68,17 @@ spec = CliSpec(
     config=ConfigSpec(
         xdg_relative_path="config.yaml",
         template_bytes=(
-            b"COGNITO_REGION: \"\"\n"
-            b"COGNITO_USER_POOL_ID: \"\"\n"
-            b"COGNITO_APP_CLIENT_ID: \"\"\n"
-            b"COGNITO_CLIENT_NAME: \"\"\n"
-            b"COGNITO_CALLBACK_URL: \"\"\n"
-            b"COGNITO_LOGOUT_URL: \"\"\n"
-            b"GOOGLE_CLIENT_ID: \"\"\n"
-            b"GOOGLE_CLIENT_SECRET: \"\"\n"
-            b"COGNITO_DOMAIN: \"\"\n"
-            b"AWS_PROFILE: \"\"\n"
-            b"AWS_REGION: \"\"\n"
+            b'COGNITO_REGION: ""\n'
+            b'COGNITO_USER_POOL_ID: ""\n'
+            b'COGNITO_APP_CLIENT_ID: ""\n'
+            b'COGNITO_CLIENT_NAME: ""\n'
+            b'COGNITO_CALLBACK_URL: ""\n'
+            b'COGNITO_LOGOUT_URL: ""\n'
+            b'GOOGLE_CLIENT_ID: ""\n'
+            b'GOOGLE_CLIENT_SECRET: ""\n'
+            b'COGNITO_DOMAIN: ""\n'
+            b'AWS_PROFILE: ""\n'
+            b'AWS_REGION: ""\n'
         ),
         validator=_validate_config_template,
     ),
@@ -86,5 +86,5 @@ spec = CliSpec(
         explicit=[
             "daylily_cognito.plugins.core.register",
         ]
-    )
+    ),
 )

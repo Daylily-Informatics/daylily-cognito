@@ -106,8 +106,13 @@ class TestHelperCoverage:
             core._resolve_profile_region("dev-profile", None)
 
     def test_callback_domain_pool_and_client_helpers(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        assert core._resolve_callback_url("https://example.test/callback", 8001, "/ignored") == "https://example.test/callback"
-        assert core._resolve_cognito_domain({"CustomDomain": "custom.example.test"}, "us-west-2") == "custom.example.test"
+        assert (
+            core._resolve_callback_url("https://example.test/callback", 8001, "/ignored")
+            == "https://example.test/callback"
+        )
+        assert (
+            core._resolve_cognito_domain({"CustomDomain": "custom.example.test"}, "us-west-2") == "custom.example.test"
+        )
         assert (
             core._resolve_cognito_domain({"CustomDomain": {"DomainName": "dict.example.test"}}, "us-west-2")
             == "dict.example.test"
@@ -128,7 +133,9 @@ class TestHelperCoverage:
         monkeypatch.setattr(core, "_list_pool_clients", lambda *_args, **_kwargs: [])
         assert core._select_config_client(cognito, "pool-123") is None
 
-        monkeypatch.setattr(core, "_list_pool_clients", lambda *_args, **_kwargs: [{"ClientId": "cid-1", "ClientName": "web"}])
+        monkeypatch.setattr(
+            core, "_list_pool_clients", lambda *_args, **_kwargs: [{"ClientId": "cid-1", "ClientName": "web"}]
+        )
         monkeypatch.setattr(
             core,
             "_describe_client",
@@ -349,7 +356,9 @@ class TestAuthConfigCoverage:
         app = _make_app(monkeypatch, tmp_path)
         cfg = tmp_path / "no-client.yaml"
         client = _mock_cognito_client()
-        client.get_paginator.return_value.paginate.return_value = [{"UserPools": [{"Name": "pool-a", "Id": "pool-123"}]}]
+        client.get_paginator.return_value.paginate.return_value = [
+            {"UserPools": [{"Name": "pool-a", "Id": "pool-123"}]}
+        ]
         client.describe_user_pool.return_value = {
             "UserPool": {"Name": "pool-a", "Id": "pool-123", "Domain": None, "CustomDomain": None}
         }
@@ -389,7 +398,9 @@ class TestAuthConfigCoverage:
         cfg = tmp_path / "update.yaml"
         _write_flat_config(cfg)
         client = _mock_cognito_client()
-        client.get_paginator.return_value.paginate.return_value = [{"UserPools": [{"Name": "pool-a", "Id": "pool-123"}]}]
+        client.get_paginator.return_value.paginate.return_value = [
+            {"UserPools": [{"Name": "pool-a", "Id": "pool-123"}]}
+        ]
         client.describe_user_pool.return_value = {
             "UserPool": {"Name": "pool-a", "Id": "pool-123", "Domain": "domain-prefix", "CustomDomain": None}
         }
@@ -453,7 +464,9 @@ class TestAwsCommandCoverage:
     ) -> None:
         app = _make_app(monkeypatch, tmp_path)
         client = _mock_cognito_client()
-        client.get_paginator.return_value.paginate.return_value = [{"UserPools": [{"Name": "other-pool", "Id": "pool-999"}]}]
+        client.get_paginator.return_value.paginate.return_value = [
+            {"UserPools": [{"Name": "other-pool", "Id": "pool-999"}]}
+        ]
         _configure_session(mock_session_cls, client)
 
         result = runner.invoke(
@@ -474,7 +487,9 @@ class TestAwsCommandCoverage:
     ) -> None:
         app = _make_app(monkeypatch, tmp_path)
         client = _mock_cognito_client()
-        client.get_paginator.return_value.paginate.return_value = [{"UserPools": [{"Name": "pool-a", "Id": "pool-123"}]}]
+        client.get_paginator.return_value.paginate.return_value = [
+            {"UserPools": [{"Name": "pool-a", "Id": "pool-123"}]}
+        ]
         client.list_user_pool_clients.return_value = {"UserPoolClients": [{"ClientName": "web", "ClientId": "cid-1"}]}
         _configure_session(mock_session_cls, client)
 
@@ -516,7 +531,9 @@ class TestAwsCommandCoverage:
     ) -> None:
         app = _make_app(monkeypatch, tmp_path)
         client = _mock_cognito_client()
-        client.get_paginator.return_value.paginate.return_value = [{"UserPools": [{"Name": "pool-a", "Id": "pool-123"}]}]
+        client.get_paginator.return_value.paginate.return_value = [
+            {"UserPools": [{"Name": "pool-a", "Id": "pool-123"}]}
+        ]
         client.list_user_pool_clients.return_value = {"UserPoolClients": [{"ClientName": "web", "ClientId": "cid-1"}]}
         _configure_session(mock_session_cls, client)
 
@@ -569,7 +586,9 @@ class TestAwsCommandCoverage:
     ) -> None:
         app = _make_app(monkeypatch, tmp_path)
         client = _mock_cognito_client()
-        client.get_paginator.return_value.paginate.return_value = [{"UserPools": [{"Name": "pool-a", "Id": "pool-123"}]}]
+        client.get_paginator.return_value.paginate.return_value = [
+            {"UserPools": [{"Name": "pool-a", "Id": "pool-123"}]}
+        ]
         client.list_user_pool_clients.return_value = {"UserPoolClients": [{"ClientName": "web", "ClientId": "cid-1"}]}
         _configure_session(mock_session_cls, client)
 
@@ -601,7 +620,9 @@ class TestAwsCommandCoverage:
     ) -> None:
         app = _make_app(monkeypatch, tmp_path)
         client = _mock_cognito_client()
-        client.get_paginator.return_value.paginate.return_value = [{"UserPools": [{"Name": "pool-a", "Id": "pool-123"}]}]
+        client.get_paginator.return_value.paginate.return_value = [
+            {"UserPools": [{"Name": "pool-a", "Id": "pool-123"}]}
+        ]
         _configure_session(mock_session_cls, client)
 
         result = runner.invoke(
@@ -624,7 +645,9 @@ class TestAwsCommandCoverage:
     ) -> None:
         app = _make_app(monkeypatch, tmp_path)
         client = _mock_cognito_client()
-        client.get_paginator.return_value.paginate.return_value = [{"UserPools": [{"Name": "pool-a", "Id": "pool-123"}]}]
+        client.get_paginator.return_value.paginate.return_value = [
+            {"UserPools": [{"Name": "pool-a", "Id": "pool-123"}]}
+        ]
         client.describe_user_pool.side_effect = [
             {"UserPool": {"Name": "pool-a", "Id": "pool-123", "Domain": "domain-prefix", "CustomDomain": None}},
             {"UserPool": {"Name": "pool-a", "Id": "pool-123", "Domain": None, "CustomDomain": None}},
@@ -644,7 +667,9 @@ class TestAwsCommandCoverage:
 
 
 class TestGoogleCoverage:
-    def test_add_google_idp_requires_app_name_or_client_id(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_add_google_idp_requires_app_name_or_client_id(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         app = _make_app(monkeypatch, tmp_path)
         cfg = tmp_path / "google.yaml"
         _write_flat_config(cfg, GOOGLE_CLIENT_ID="gid-123", GOOGLE_CLIENT_SECRET="gsecret-456")
@@ -665,7 +690,9 @@ class TestGoogleCoverage:
         cfg = tmp_path / "google.yaml"
         _write_flat_config(cfg, GOOGLE_CLIENT_ID="gid-123", GOOGLE_CLIENT_SECRET="gsecret-456")
         client = _mock_cognito_client()
-        client.get_paginator.return_value.paginate.return_value = [{"UserPools": [{"Name": "pool-a", "Id": "pool-123"}]}]
+        client.get_paginator.return_value.paginate.return_value = [
+            {"UserPools": [{"Name": "pool-a", "Id": "pool-123"}]}
+        ]
         client.list_user_pool_clients.return_value = {"UserPoolClients": [{"ClientName": "web", "ClientId": "cid-1"}]}
         client.describe_identity_provider.return_value = {"IdentityProvider": {"ProviderName": "Google"}}
         _configure_session(mock_session_cls, client)
@@ -742,7 +769,9 @@ class TestConfigBackedCommandCoverage:
         result = runner.invoke(app, ["--config", str(cfg), "ensure-group", "admins", "--description", "Admin team"])
 
         assert result.exit_code == 0
-        client.create_group.assert_called_once_with(UserPoolId="us-west-2_pool", GroupName="admins", Description="Admin team")
+        client.create_group.assert_called_once_with(
+            UserPoolId="us-west-2_pool", GroupName="admins", Description="Admin team"
+        )
 
     @mock.patch("boto3.Session")
     def test_add_user_to_group_calls_admin_api(

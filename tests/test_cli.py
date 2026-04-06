@@ -93,7 +93,9 @@ def _configure_session(mock_session_cls: mock.MagicMock, client: mock.MagicMock)
 
 
 class TestRootAndConfigFileSelection:
-    def test_root_config_override_controls_builtin_config_path(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_root_config_override_controls_builtin_config_path(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         app = _make_app(monkeypatch, tmp_path)
         override = tmp_path / "override.yaml"
 
@@ -102,7 +104,9 @@ class TestRootAndConfigFileSelection:
         assert result.exit_code == 0
         assert "".join(result.output.splitlines()) == str(override.resolve())
 
-    def test_config_init_writes_flat_template_at_default_path(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_config_init_writes_flat_template_at_default_path(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         app = _make_app(monkeypatch, tmp_path)
         default_path = tmp_path / "xdg-config" / "daycog" / "config.yaml"
 
@@ -137,7 +141,9 @@ class TestRootAndConfigFileSelection:
         assert "Config file not found" in result.output
         assert "daycog config init" in result.output
 
-    def test_auth_config_print_rejects_legacy_context_yaml(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_auth_config_print_rejects_legacy_context_yaml(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         app = _make_app(monkeypatch, tmp_path)
         cfg = tmp_path / "legacy.yaml"
         cfg.write_text("contexts: {}\nactive_context: default\n", encoding="utf-8")
@@ -587,7 +593,10 @@ class TestFlagDrivenAwsCommands:
             {"UserPools": [{"Name": "pool-a", "Id": "pool-a-id"}]}
         ]
         client.list_user_pool_clients.return_value = {
-            "UserPoolClients": [{"ClientName": "app-1", "ClientId": "cid-1"}, {"ClientName": "app-2", "ClientId": "cid-2"}]
+            "UserPoolClients": [
+                {"ClientName": "app-1", "ClientId": "cid-1"},
+                {"ClientName": "app-2", "ClientId": "cid-2"},
+            ]
         }
         _configure_session(mock_session_cls, client)
 
@@ -654,7 +663,9 @@ class TestFlagDrivenAwsCommands:
         client.get_paginator.return_value.paginate.return_value = [
             {"UserPools": [{"Name": "pool-a", "Id": "pool-a-id"}]}
         ]
-        client.list_user_pool_clients.return_value = {"UserPoolClients": [{"ClientName": "web-app", "ClientId": "cid-1"}]}
+        client.list_user_pool_clients.return_value = {
+            "UserPoolClients": [{"ClientName": "web-app", "ClientId": "cid-1"}]
+        }
         _configure_session(mock_session_cls, client)
 
         result = runner.invoke(
@@ -692,7 +703,9 @@ class TestFlagDrivenAwsCommands:
         client.get_paginator.return_value.paginate.return_value = [
             {"UserPools": [{"Name": "pool-a", "Id": "pool-a-id"}]}
         ]
-        client.list_user_pool_clients.return_value = {"UserPoolClients": [{"ClientName": "web-app", "ClientId": "cid-1"}]}
+        client.list_user_pool_clients.return_value = {
+            "UserPoolClients": [{"ClientName": "web-app", "ClientId": "cid-1"}]
+        }
         _configure_session(mock_session_cls, client)
 
         result = runner.invoke(
