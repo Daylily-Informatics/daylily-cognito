@@ -923,8 +923,10 @@ def list_pools(
         pools = []
         for page in paginator.paginate(MaxResults=60):
             for pool in page.get("UserPools", []):
-                pools.append({"name": pool.get("Name", ""), "id": pool.get("Id", "")})
-                table.add_row(pool["name"], pool["id"])
+                name = pool.get("Name", "")
+                pool_id = pool.get("Id", "")
+                pools.append({"name": name, "id": pool_id})
+                table.add_row(name, pool_id)
 
         ccyo_out.emit_json({"pools": pools, "total": len(pools), "region": resolved_region})
 
