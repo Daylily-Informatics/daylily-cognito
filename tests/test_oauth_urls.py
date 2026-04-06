@@ -97,7 +97,7 @@ class TestBuildLogoutUrl:
         url = build_logout_url(
             domain="myapp.auth.us-west-2.amazoncognito.com",
             client_id="abc123",
-            logout_uri="http://localhost:8000/",
+            redirect_uri="http://localhost:8000/auth/callback",
         )
 
         parsed = urlparse(url)
@@ -107,19 +107,20 @@ class TestBuildLogoutUrl:
 
         params = parse_qs(parsed.query)
         assert params["client_id"] == ["abc123"]
-        assert params["logout_uri"] == ["http://localhost:8000/"]
+        assert params["redirect_uri"] == ["http://localhost:8000/auth/callback"]
+        assert params["response_type"] == ["code"]
 
     def test_stable_query_params(self) -> None:
         """Query params are stable across calls."""
         url1 = build_logout_url(
             domain="myapp.auth.us-west-2.amazoncognito.com",
             client_id="abc123",
-            logout_uri="http://localhost:8000/",
+            redirect_uri="http://localhost:8000/auth/callback",
         )
         url2 = build_logout_url(
             domain="myapp.auth.us-west-2.amazoncognito.com",
             client_id="abc123",
-            logout_uri="http://localhost:8000/",
+            redirect_uri="http://localhost:8000/auth/callback",
         )
         assert url1 == url2
 
@@ -128,13 +129,25 @@ class TestBuildLogoutUrl:
         url = build_logout_url(
             domain="https://myapp.auth.us-west-2.amazoncognito.com",
             client_id="abc123",
-            logout_uri="http://localhost:8000/",
+            redirect_uri="http://localhost:8000/auth/callback",
         )
 
         parsed = urlparse(url)
         assert parsed.scheme == "https"
         assert parsed.netloc == "myapp.auth.us-west-2.amazoncognito.com"
         assert parsed.path == "/logout"
+
+    def test_logout_uri_alias_is_still_accepted(self) -> None:
+        """Legacy logout_uri callers still emit the managed login contract."""
+        url = build_logout_url(
+            domain="myapp.auth.us-west-2.amazoncognito.com",
+            client_id="abc123",
+            logout_uri="http://localhost:8000/auth/callback",
+        )
+
+        params = parse_qs(urlparse(url).query)
+        assert params["redirect_uri"] == ["http://localhost:8000/auth/callback"]
+        assert params["response_type"] == ["code"]
 
 
 # ---------------------------------------------------------------------------

@@ -79,14 +79,16 @@ def build_logout_url(
     *,
     domain: str,
     client_id: str,
-    logout_uri: str,
+    redirect_uri: str | None = None,
+    logout_uri: str | None = None,
 ) -> str:
     """Build Cognito logout URL.
 
     Args:
         domain: Cognito domain (e.g., 'your-domain.auth.us-west-2.amazoncognito.com')
         client_id: App client ID
-        logout_uri: URL to redirect to after logout
+        redirect_uri: Hosted UI callback URL after logout. Preferred for managed login.
+        logout_uri: Deprecated alias for redirect_uri retained for existing callers.
 
     Returns:
         Full logout URL string
@@ -95,12 +97,16 @@ def build_logout_url(
         url = build_logout_url(
             domain="myapp.auth.us-west-2.amazoncognito.com",
             client_id="abc123",
-            logout_uri="http://localhost:8000/",
+            redirect_uri="http://localhost:8000/auth/callback",
         )
     """
+    target = str(redirect_uri or logout_uri or "").strip()
+    if not target:
+        raise ValueError("redirect_uri is required")
     params = {
         "client_id": client_id,
-        "logout_uri": logout_uri,
+        "redirect_uri": target,
+        "response_type": "code",
     }
     query = urllib.parse.urlencode(params)
     return f"https://{_normalize_domain(domain)}/logout?{query}"
