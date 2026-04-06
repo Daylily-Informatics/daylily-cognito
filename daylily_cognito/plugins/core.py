@@ -537,6 +537,14 @@ def status() -> None:
         else:
             table.add_row("App Client ID", "[dim]Not configured[/dim]", "")
 
+        status_data = {
+            "region": runtime.aws_region,
+            "user_pool_id": pool_id or None,
+            "app_client_id": client_id or None,
+            "config_source": source,
+        }
+        ccyo_out.emit_json(status_data)
+
         _print_rich(table)
 
         if not pool_id or not client_id:
@@ -912,14 +920,16 @@ def list_pools(
         table.add_column("Pool ID")
 
         paginator = cognito.get_paginator("list_user_pools")
-        count = 0
+        pools = []
         for page in paginator.paginate(MaxResults=60):
             for pool in page.get("UserPools", []):
-                table.add_row(pool.get("Name", ""), pool.get("Id", ""))
-                count += 1
+                pools.append({"name": pool.get("Name", ""), "id": pool.get("Id", "")})
+                table.add_row(pool["name"], pool["id"])
+
+        ccyo_out.emit_json({"pools": pools, "total": len(pools), "region": resolved_region})
 
         _print_rich(table)
-        ccyo_out.info(f"\n[dim]Total: {count} pools[/dim]")
+        ccyo_out.info(f"\n[dim]Total: {len(pools)} pools[/dim]")
     except Exception as e:
         ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
@@ -944,9 +954,12 @@ def list_apps(
         table.add_column("Client Name", style="cyan")
         table.add_column("Client ID")
 
-        clients = cognito.list_user_pool_clients(UserPoolId=pool_id, MaxResults=60).get("UserPoolClients", [])
-        for client in clients:
-            table.add_row(client.get("ClientName", ""), client.get("ClientId", ""))
+        clients_raw = cognito.list_user_pool_clients(UserPoolId=pool_id, MaxResults=60).get("UserPoolClients", [])
+        clients = [{"name": c.get("ClientName", ""), "id": c.get("ClientId", "")} for c in clients_raw]
+        for c in clients:
+            table.add_row(c["name"], c["id"])
+
+        ccyo_out.emit_json({"clients": clients, "total": len(clients), "pool_name": pool_name})
 
         _print_rich(table)
         ccyo_out.info(f"\n[dim]Total: {len(clients)} app clients[/dim]")
