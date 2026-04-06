@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import tomllib
+import re
 from pathlib import Path
 
 
@@ -17,13 +17,11 @@ def test_activate_uses_metadata_only_editable_detection() -> None:
 def test_activate_reads_cli_core_requirement_from_pyproject() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     activate_script = (repo_root / "activate").read_text(encoding="utf-8")
-    pyproject_data = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    pyproject_text = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
+    match = re.search(r'^\s*"(?P<dependency>cli-core-yo[^"]+)",\s*$', pyproject_text, re.MULTILINE)
 
-    cli_core_requirement = next(
-        dependency
-        for dependency in pyproject_data["project"]["dependencies"]
-        if dependency.startswith("cli-core-yo")
-    )
+    assert match is not None
+    cli_core_requirement = match.group("dependency")
 
     assert cli_core_requirement.startswith("cli-core-yo")
     assert cli_core_requirement not in activate_script

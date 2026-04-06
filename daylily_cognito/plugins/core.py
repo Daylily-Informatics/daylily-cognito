@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import typer
 from cli_core_yo import ccyo_out
+from rich.console import Console
 from rich.table import Table
 
 from .._app_client_update import (
@@ -33,6 +35,16 @@ from ..config import (
 cognito_app = typer.Typer(help="Cognito authentication management commands")
 config_app = typer.Typer(help="Manage the effective daycog auth config file")
 cognito_app.add_typer(config_app, name="config")
+
+
+def _print_rich(renderable: Any) -> None:
+    """Render a Rich object to the current stdout."""
+    Console(
+        file=sys.stdout,
+        highlight=False,
+        no_color="NO_COLOR" in os.environ,
+        stderr=False,
+    ).print(renderable)
 
 
 def _resolve_profile_region(profile: Optional[str], region: Optional[str]) -> tuple[str, str]:
@@ -315,10 +327,10 @@ def _build_config_values(
         config_values.pop(managed_key, None)
     config_values.update(
         {
-        "AWS_PROFILE": profile,
-        "AWS_REGION": region,
-        "COGNITO_REGION": region,
-        "COGNITO_USER_POOL_ID": pool_details["pool_id"],
+            "AWS_PROFILE": profile,
+            "AWS_REGION": region,
+            "COGNITO_REGION": region,
+            "COGNITO_USER_POOL_ID": pool_details["pool_id"],
         }
     )
 
@@ -522,11 +534,13 @@ def status() -> None:
         else:
             table.add_row("App Client ID", "[dim]Not configured[/dim]", "")
 
-        ccyo_out.print_rich(table)
+        _print_rich(table)
 
         if not pool_id or not client_id:
             ccyo_out.info("\n[yellow]⚠[/yellow]  Cognito not fully configured")
-            ccyo_out.info("   Populate the active config file via [cyan]daycog setup[/cyan] or [cyan]daycog auth-config create[/cyan]")
+            ccyo_out.info(
+                "   Populate the active config file via [cyan]daycog setup[/cyan] or [cyan]daycog auth-config create[/cyan]"
+            )
 
     except Exception as e:
         ccyo_out.info(f"[red]✗[/red]  Error: {e}")
@@ -903,7 +917,7 @@ def list_pools(
                 table.add_row(pool.get("Name", ""), pool.get("Id", ""))
                 count += 1
 
-        ccyo_out.print_rich(table)
+        _print_rich(table)
         ccyo_out.info(f"\n[dim]Total: {count} pools[/dim]")
     except Exception as e:
         ccyo_out.info(f"[red]✗[/red]  Error: {e}")
@@ -933,7 +947,7 @@ def list_apps(
         for client in clients:
             table.add_row(client.get("ClientName", ""), client.get("ClientId", ""))
 
-        ccyo_out.print_rich(table)
+        _print_rich(table)
         ccyo_out.info(f"\n[dim]Total: {len(clients)} app clients[/dim]")
     except Exception as e:
         ccyo_out.info(f"[red]✗[/red]  Error: {e}")
@@ -1109,7 +1123,9 @@ def remove_app(
         ccyo_out.info(f"[green]✓[/green]  Deleted app client: {found['client_name']} ({found['client_id']})")
 
         if delete_config:
-            ccyo_out.info("[dim]Config files are no longer updated by remove-app; run daycog auth-config update if needed.[/dim]")
+            ccyo_out.info(
+                "[dim]Config files are no longer updated by remove-app; run daycog auth-config update if needed.[/dim]"
+            )
     except Exception as e:
         ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
@@ -1523,6 +1539,7 @@ def set_user_attributes(
         ccyo_out.info(f"[red]✗[/red]  Error: {e}")
         raise typer.Exit(1)
 
+
 def _generate_temp_password() -> str:
     """Generate a secure temporary password."""
     import secrets
@@ -1654,7 +1671,7 @@ def list_users(
                 table.add_row(email, customer_id, status_color, str(created), enabled)
                 user_count += 1
 
-        ccyo_out.print_rich(table)
+        _print_rich(table)
         ccyo_out.info(f"\n[dim]Total: {user_count} users[/dim]")
 
     except Exception as e:
@@ -1672,6 +1689,7 @@ def export_users(
     try:
         import json
         from datetime import datetime, timezone
+
         runtime = _get_runtime_config(require_profile=True)
         region = runtime.aws_region
         cognito = _get_cognito_client()
@@ -1787,6 +1805,7 @@ def teardown(
     """Delete the Cognito User Pool and all its users."""
     try:
         import boto3
+
         runtime = _get_runtime_config(require_profile=True)
         session = boto3.Session(profile_name=runtime.require_aws_profile(), region_name=runtime.aws_region)
         cognito = session.client("cognito-idp")
@@ -1801,7 +1820,9 @@ def teardown(
 
         if not pool_id:
             ccyo_out.info("[red]✗[/red]  No pool ID found")
-            ccyo_out.info("   Populate the active config file via [cyan]daycog setup[/cyan] or [cyan]daycog auth-config create[/cyan]")
+            ccyo_out.info(
+                "   Populate the active config file via [cyan]daycog setup[/cyan] or [cyan]daycog auth-config create[/cyan]"
+            )
             ccyo_out.info("   Or use --name to search by pool name")
             raise typer.Exit(1)
 
@@ -1822,7 +1843,9 @@ def teardown(
         ccyo_out.info(f"[cyan]Deleting pool {pool_id}...[/cyan]")
         cognito.delete_user_pool(UserPoolId=pool_id)
         ccyo_out.info(f"[green]✓[/green]  Deleted Cognito pool: {pool_name_actual} ({pool_id})")
-        ccyo_out.info("\n[yellow]Remember to refresh or remove the config file if it still points at this pool.[/yellow]")
+        ccyo_out.info(
+            "\n[yellow]Remember to refresh or remove the config file if it still points at this pool.[/yellow]"
+        )
 
     except Exception as e:
         ccyo_out.info(f"[red]✗[/red]  Error: {e}")
