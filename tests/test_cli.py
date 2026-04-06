@@ -124,12 +124,11 @@ class TestRootAndConfigFileSelection:
         cfg = tmp_path / "auth.yaml"
         _write_flat_config(cfg, COGNITO_CLIENT_NAME="web-app")
 
-        result = runner.invoke(app, ["--config", str(cfg), "--json", "auth-config", "print"])
+        result = runner.invoke(app, ["--config", str(cfg), "auth-config", "print"])
 
         assert result.exit_code == 0
-        payload = json.loads(result.output)
-        assert payload["config_path"] == str(cfg.resolve())
-        assert payload["values"]["COGNITO_CLIENT_NAME"] == "web-app"
+        assert str(cfg.resolve()) in result.output
+        assert "COGNITO_CLIENT_NAME=web-app" in result.output
 
     def test_auth_config_print_errors_for_missing_file(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         app = _make_app(monkeypatch, tmp_path)
