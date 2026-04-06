@@ -127,7 +127,8 @@ class TestRootAndConfigFileSelection:
         result = runner.invoke(app, ["--config", str(cfg), "auth-config", "print"])
 
         assert result.exit_code == 0
-        assert str(cfg.resolve()) in result.output
+        normalized_output = result.output.replace("\n", "")
+        assert str(cfg.resolve()) in normalized_output
         assert "COGNITO_CLIENT_NAME=web-app" in result.output
 
     def test_auth_config_print_errors_for_missing_file(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
