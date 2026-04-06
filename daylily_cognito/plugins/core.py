@@ -522,7 +522,7 @@ def status() -> None:
         else:
             table.add_row("App Client ID", "[dim]Not configured[/dim]", "")
 
-        ccyo_out.print_text(table)
+        ccyo_out.print_rich(table)
 
         if not pool_id or not client_id:
             ccyo_out.info("\n[yellow]⚠[/yellow]  Cognito not fully configured")
@@ -903,7 +903,7 @@ def list_pools(
                 table.add_row(pool.get("Name", ""), pool.get("Id", ""))
                 count += 1
 
-        ccyo_out.print_text(table)
+        ccyo_out.print_rich(table)
         ccyo_out.info(f"\n[dim]Total: {count} pools[/dim]")
     except Exception as e:
         ccyo_out.info(f"[red]✗[/red]  Error: {e}")
@@ -933,7 +933,7 @@ def list_apps(
         for client in clients:
             table.add_row(client.get("ClientName", ""), client.get("ClientId", ""))
 
-        ccyo_out.print_text(table)
+        ccyo_out.print_rich(table)
         ccyo_out.info(f"\n[dim]Total: {len(clients)} app clients[/dim]")
     except Exception as e:
         ccyo_out.info(f"[red]✗[/red]  Error: {e}")
@@ -1654,7 +1654,7 @@ def list_users(
                 table.add_row(email, customer_id, status_color, str(created), enabled)
                 user_count += 1
 
-        ccyo_out.print_text(table)
+        ccyo_out.print_rich(table)
         ccyo_out.info(f"\n[dim]Total: {user_count} users[/dim]")
 
     except Exception as e:

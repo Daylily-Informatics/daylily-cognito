@@ -68,20 +68,35 @@ PY
 }
 
 _daycog_distribution_requires_expected_cli_core_yo() {
-  python - "$_DAYCOG_ACTIVATE_DIR/pyproject.toml" <<'PY' >/dev/null 2>&1
+  PYTHONPATH="" python - "$_DAYCOG_ACTIVATE_DIR/pyproject.toml" <<'PY' >/dev/null 2>&1
 import importlib.metadata
-import pathlib
 import sys
+import tomllib
+from pathlib import Path
 
-expected = "1.2.2"
-pyproject_path = pathlib.Path(sys.argv[1])
+from packaging.requirements import Requirement
+from packaging.version import Version
+
+pyproject_path = Path(sys.argv[1])
 try:
     installed = importlib.metadata.version("cli-core-yo")
 except importlib.metadata.PackageNotFoundError:
     raise SystemExit(1)
 
-pyproject_text = pyproject_path.read_text(encoding="utf-8").replace(" ", "")
-raise SystemExit(0 if installed == expected and "cli-core-yo==1.2.2" in pyproject_text else 1)
+try:
+    pyproject_data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    dependency = next(
+        requirement_text
+        for requirement_text in pyproject_data["project"]["dependencies"]
+        if Requirement(requirement_text).name == "cli-core-yo"
+    )
+    requirement = Requirement(dependency)
+except (KeyError, OSError, StopIteration, tomllib.TOMLDecodeError, ValueError):
+    raise SystemExit(1)
+
+raise SystemExit(
+    0 if not requirement.specifier or Version(installed) in requirement.specifier else 1
+)
 PY
 }
 
