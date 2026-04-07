@@ -112,3 +112,4 @@ daylily_auth_cognito/
 - [Implementation Plan](IMPLEMENTATION_PLAN.md)
 - [Migrating to 2.0.0](MIGRATING_TO_2_0_0.md)
 - [2.0.0 Changelog](CHANGELOG_2_0_0.md)
+ 
