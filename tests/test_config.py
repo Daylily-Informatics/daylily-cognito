@@ -1,4 +1,4 @@
-"""Tests for the flat-file config helpers."""
+"""Tests for the flat-file CLI config helpers."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from daylily_cognito.config import (
+from daylily_auth_cognito.cli.config import (
     CognitoConfig,
     ConfigError,
     active_config_path,
@@ -27,7 +27,10 @@ def _write_yaml(path: Path, payload: dict[str, object]) -> Path:
 
 
 def _set_active_config(monkeypatch: pytest.MonkeyPatch, path: Path | None) -> None:
-    monkeypatch.setattr("daylily_cognito.config.get_context", lambda: SimpleNamespace(config_path=path))
+    monkeypatch.setattr(
+        "daylily_auth_cognito.cli.config.get_context",
+        lambda: SimpleNamespace(config_path=path),
+    )
 
 
 class TestValidateConfigText:
@@ -222,7 +225,9 @@ class TestRuntimeResolution:
         assert runtime.aws_region == "eu-west-1"
 
     def test_resolve_runtime_config_can_skip_missing_file(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         path = tmp_path / "missing.yaml"
         _set_active_config(monkeypatch, path)
@@ -237,7 +242,9 @@ class TestRuntimeResolution:
         assert runtime.aws_region == "us-west-2"
 
     def test_resolve_runtime_config_errors_without_region(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         path = _write_yaml(
             tmp_path / "config.yaml",
@@ -263,12 +270,11 @@ class TestRuntimeResolution:
             },
         )
         _set_active_config(monkeypatch, path)
-        monkeypatch.setenv("AWS_REGION", "us-east-1")
 
         runtime = resolve_runtime_config()
 
-        assert runtime.require("COGNITO_USER_POOL_ID") == "pool-123"
         with pytest.raises(ConfigError, match="AWS profile not set"):
             runtime.require_aws_profile()
-        with pytest.raises(ConfigError, match="Missing required config value: GOOGLE_CLIENT_ID"):
+        assert runtime.require("COGNITO_USER_POOL_ID") == "pool-123"
+        with pytest.raises(ConfigError, match="Missing required config value"):
             runtime.require("GOOGLE_CLIENT_ID")

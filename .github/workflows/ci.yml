@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,auth]"
+          pip install -e ".[dev]"
 
       - name: Run tests
         run: |
@@ -34,7 +34,12 @@ jobs:
       - name: Run tests with coverage
         if: matrix.python-version == '3.11'
         run: |
-          python -m pytest --cov=daylily_cognito --cov-report=term-missing
+          python -m pytest --cov=daylily_auth_cognito --cov-report=term-missing:skip-covered --cov-report=json
+
+      - name: Enforce per-module coverage floor
+        if: matrix.python-version == '3.11'
+        run: |
+          python tools/check_module_coverage.py coverage.json
 
   lint:
     runs-on: ubuntu-latest
@@ -70,22 +75,73 @@ jobs:
       - name: Install package
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[auth]"
+          pip install -e ".[dev]"
 
       - name: Verify no daylib imports
         run: |
-          if grep -r "daylib" daylily_cognito/; then
-            echo "ERROR: Found daylib imports in daylily_cognito/"
+          if grep -r "daylib" daylily_auth_cognito/; then
+            echo "ERROR: Found daylib imports in daylily_auth_cognito/"
             exit 1
           fi
           echo "OK: No daylib imports found"
 
       - name: Verify package imports
         run: |
-          python -c "from daylily_cognito import CognitoConfig, CognitoAuth, create_auth_dependency, security"
-          python -c "from daylily_cognito import build_authorization_url, build_logout_url"
-          python -c "from daylily_cognito import decode_jwt_unverified, verify_jwt_claims_unverified_signature"
-          echo "OK: All public imports work"
+          python - <<'PY'
+          import daylily_auth_cognito as pkg
+          from daylily_auth_cognito import (
+              CognitoTokenVerifier,
+              CognitoWebSessionConfig,
+              JWKSCache,
+              SessionPrincipal,
+              __version__,
+              clear_session_principal,
+              complete_cognito_callback,
+              configure_session_middleware,
+              create_auth_dependency,
+              load_session_principal,
+              start_cognito_login,
+              store_session_principal,
+              verify_m2m_token_with_jwks,
+          )
+          from daylily_auth_cognito.admin.client import CognitoAdminClient
+          from daylily_auth_cognito.browser import google as browser_google
+          from daylily_auth_cognito.browser import oauth as browser_oauth
+          from daylily_auth_cognito.browser import session as browser_session
+          from daylily_auth_cognito.cli.main import main
+          from daylily_auth_cognito.runtime.fastapi import create_auth_dependency as create_dep
+          from daylily_auth_cognito.runtime.m2m import verify_m2m_token_with_jwks as verify_m2m
+          from daylily_auth_cognito.runtime.verifier import CognitoTokenVerifier as RuntimeVerifier
+
+          expected = {
+              "CognitoWebSessionConfig",
+              "SessionPrincipal",
+              "configure_session_middleware",
+              "start_cognito_login",
+              "complete_cognito_callback",
+              "load_session_principal",
+              "store_session_principal",
+              "clear_session_principal",
+              "CognitoTokenVerifier",
+              "create_auth_dependency",
+              "JWKSCache",
+              "verify_m2m_token_with_jwks",
+              "__version__",
+          }
+          assert set(pkg.__all__) == expected
+          for removed in ("CognitoAuth", "CognitoConfig", "security", "build_authorization_url", "build_logout_url"):
+              assert not hasattr(pkg, removed), removed
+          assert CognitoTokenVerifier is RuntimeVerifier
+          assert create_auth_dependency is create_dep
+          assert verify_m2m_token_with_jwks is verify_m2m
+          assert browser_session is not None
+          assert browser_oauth is not None
+          assert browser_google is not None
+          assert CognitoAdminClient is not None
+          assert main is not None
+          assert __version__
+          print("OK: Curated 2.0 imports work and removed names stay absent")
+          PY
 
       - name: Verify CLI entrypoint
         run: |

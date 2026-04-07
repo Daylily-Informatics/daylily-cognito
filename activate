@@ -47,7 +47,7 @@ import sys
 
 repo_root = pathlib.Path(sys.argv[1]).resolve()
 proc = subprocess.run(
-    [sys.executable, "-m", "pip", "show", "daylily-cognito"],
+    [sys.executable, "-m", "pip", "show", "daylily-auth-cognito"],
     capture_output=True,
     text=True,
 )
@@ -137,13 +137,13 @@ fi
 
 if [ "$_DAYCOG_NEEDS_INSTALL" = "1" ]; then
   export SETUPTOOLS_SCM_PRETEND_VERSION="0.4.4"
-  echo "Installing daylily-cognito in editable mode..."
-  if ! python -m pip install --no-build-isolation -e "${_DAYCOG_ACTIVATE_DIR}[dev,auth]"; then
+  echo "Installing daylily-auth-cognito in editable mode..."
+  if ! python -m pip install --no-build-isolation -e "${_DAYCOG_ACTIVATE_DIR}[dev]"; then
     echo "Editable install failed" >&2
     return 1
   fi
   if ! _daycog_distribution_is_editable_from_repo "$_DAYCOG_ACTIVATE_DIR"; then
-    echo "daylily-cognito is not installed editable from $_DAYCOG_ACTIVATE_DIR" >&2
+    echo "daylily-auth-cognito is not installed editable from $_DAYCOG_ACTIVATE_DIR" >&2
     return 1
   fi
 fi

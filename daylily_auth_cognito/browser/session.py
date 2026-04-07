@@ -13,14 +13,14 @@ from fastapi import FastAPI, Request
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import RedirectResponse
 
-from .oauth import build_authorization_url, exchange_authorization_code
+from .oauth import build_authorization_url, exchange_authorization_code_async
 
 DEFAULT_AUTHENTICATED_REDIRECT = "/"
 DEFAULT_ERROR_REDIRECT_PATH = "/auth/error"
 SESSION_EXPIRED_REASON = "session_expired"
 STATE_SESSION_KEY = "_cognito_oauth_state"
 NEXT_PATH_SESSION_KEY = "_cognito_post_auth_redirect"
-CONFIG_STATE_KEY = "_daylily_cognito_web_session_config"
+CONFIG_STATE_KEY = "_daylily_auth_cognito_web_session_config"
 TOKEN_FIELD_NAMES = frozenset({"access_token", "id_token", "refresh_token"})
 PRINCIPAL_SESSION_FIELDS = (
     "user_sub",
@@ -191,7 +191,7 @@ def configure_session_middleware(app: FastAPI, config: CognitoWebSessionConfig) 
         SessionMiddleware,
         secret_key=config.session_secret_key,
         max_age=config.session_max_age,
-        same_site="lax",
+        same_site=config.same_site,
         https_only=config.https_only,
         session_cookie=config.session_cookie_name,
     )
@@ -241,7 +241,7 @@ async def complete_cognito_callback(
     request.session.pop(config.state_session_key, None)
 
     try:
-        tokens = exchange_authorization_code(
+        tokens = await exchange_authorization_code_async(
             domain=config.normalized_domain,
             client_id=config.client_id,
             code=code,

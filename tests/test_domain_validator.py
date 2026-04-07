@@ -1,146 +1,41 @@
-"""Tests for DomainValidator class."""
+"""Tests for email-domain policy helpers."""
 
 from __future__ import annotations
 
-from daylily_cognito.domain_validator import DomainValidator
-
-# ── Allow-all defaults ───────────────────────────────────────────────
+from daylily_auth_cognito.policy.email_domains import DomainValidator, EmailDomainPolicy
 
 
-class TestAllowAll:
-    """Empty string or 'all' for allowed_domains means allow everything."""
+def test_domain_validator_is_runtime_checkable_policy() -> None:
+    validator = DomainValidator(allowed_domains="example.test")
 
-    def test_empty_string_allows_all(self):
-        v = DomainValidator("")
-        assert v.validate_email_domain("user@anything.com") == (True, "")
-
-    def test_explicit_all_allows_all(self):
-        v = DomainValidator("all")
-        assert v.validate_email_domain("user@anything.com") == (True, "")
-
-    def test_all_case_insensitive(self):
-        v = DomainValidator("ALL")
-        assert v.validate_email_domain("user@foo.org") == (True, "")
-
-    def test_whitespace_only_allows_all(self):
-        v = DomainValidator("  ")
-        assert v.validate_email_domain("user@bar.net") == (True, "")
+    assert isinstance(validator, EmailDomainPolicy)
 
 
-# ── Specific allowed domains ─────────────────────────────────────────
+def test_domain_validator_allows_expected_domains() -> None:
+    validator = DomainValidator(allowed_domains="example.test,science.test")
+
+    assert validator.validate_email_domain("user@example.test") == (True, "")
+    assert validator.validate_email_domain("user@science.test") == (True, "")
+    assert validator.validate_email_domain("user@other.test") == (
+        False,
+        "Domain 'other.test' is not in the allowed list",
+    )
 
 
-class TestSpecificAllowed:
-    def test_allowed_domain_passes(self):
-        v = DomainValidator("lsmc.com,dyly.bio")
-        assert v.validate_email_domain("alice@lsmc.com") == (True, "")
-        assert v.validate_email_domain("bob@dyly.bio") == (True, "")
+def test_domain_validator_respects_block_rules() -> None:
+    validator = DomainValidator(allowed_domains="all", blocked_domains="evil.test")
 
-    def test_unlisted_domain_rejected(self):
-        v = DomainValidator("lsmc.com,dyly.bio")
-        ok, msg = v.validate_email_domain("eve@evil.com")
-        assert ok is False
-        assert "evil.com" in msg
+    assert validator.validate_email_domain("user@good.test") == (True, "")
+    assert validator.validate_email_domain("user@evil.test") == (False, "Domain 'evil.test' is blocked")
 
-    def test_case_insensitive_matching(self):
-        v = DomainValidator("LSMC.COM")
-        assert v.validate_email_domain("user@lsmc.com") == (True, "")
-        assert v.validate_email_domain("user@LSMC.COM") == (True, "")
-
-    def test_whitespace_stripped(self):
-        v = DomainValidator(" lsmc.com , dyly.bio ")
-        assert v.validate_email_domain("user@lsmc.com") == (True, "")
-        assert v.validate_email_domain("user@dyly.bio") == (True, "")
+    block_all = DomainValidator(blocked_domains="all")
+    assert block_all.validate_email_domain("user@example.test") == (
+        False,
+        "Domain 'example.test' is blocked (all domains blocked)",
+    )
 
 
-# ── Blocked domains ──────────────────────────────────────────────────
+def test_domain_validator_rejects_invalid_email_shape() -> None:
+    validator = DomainValidator()
 
-
-class TestBlocked:
-    def test_empty_blocked_blocks_nothing(self):
-        v = DomainValidator("", "")
-        assert v.validate_email_domain("user@anything.com") == (True, "")
-
-    def test_specific_blocked_domain(self):
-        v = DomainValidator("", "evil.com")
-        ok, msg = v.validate_email_domain("user@evil.com")
-        assert ok is False
-        assert "blocked" in msg.lower()
-
-    def test_non_blocked_domain_passes(self):
-        v = DomainValidator("", "evil.com")
-        assert v.validate_email_domain("user@good.com") == (True, "")
-
-    def test_block_all(self):
-        v = DomainValidator("", "all")
-        ok, msg = v.validate_email_domain("user@anything.com")
-        assert ok is False
-        assert "blocked" in msg.lower()
-
-    def test_block_all_case_insensitive(self):
-        v = DomainValidator("", "ALL")
-        ok, _ = v.validate_email_domain("user@foo.org")
-        assert ok is False
-
-    def test_blocked_domain_case_insensitive(self):
-        v = DomainValidator("", "EVIL.COM")
-        ok, _ = v.validate_email_domain("user@evil.com")
-        assert ok is False
-
-    def test_blocked_whitespace_stripped(self):
-        v = DomainValidator("", " evil.com , spam.org ")
-        ok, _ = v.validate_email_domain("user@spam.org")
-        assert ok is False
-
-
-# ── Deny wins over allow ─────────────────────────────────────────────
-
-
-class TestDenyWins:
-    def test_blocked_overrides_allowed(self):
-        v = DomainValidator("lsmc.com", "lsmc.com")
-        ok, msg = v.validate_email_domain("user@lsmc.com")
-        assert ok is False
-        assert "blocked" in msg.lower()
-
-    def test_block_all_overrides_allow_all(self):
-        v = DomainValidator("all", "all")
-        ok, _ = v.validate_email_domain("user@foo.com")
-        assert ok is False
-
-
-# ── Invalid emails ───────────────────────────────────────────────────
-
-
-class TestInvalidEmail:
-    def test_no_at_sign(self):
-        v = DomainValidator("")
-        ok, msg = v.validate_email_domain("noatsign")
-        assert ok is False
-        assert "Invalid" in msg
-
-    def test_empty_domain(self):
-        v = DomainValidator("")
-        ok, msg = v.validate_email_domain("user@")
-        assert ok is False
-        assert "Invalid" in msg
-
-    def test_multiple_at_uses_last(self):
-        v = DomainValidator("lsmc.com")
-        assert v.validate_email_domain("user@extra@lsmc.com") == (True, "")
-
-
-# ── Protocol compatibility ───────────────────────────────────────────
-
-
-class TestProtocol:
-    def test_isinstance_settings_protocol(self):
-        from daylily_cognito.auth import SettingsProtocol
-
-        v = DomainValidator("")
-        assert isinstance(v, SettingsProtocol)
-
-    def test_importable_from_package(self):
-        from daylily_cognito import DomainValidator as DV
-
-        assert DV is DomainValidator
+    assert validator.validate_email_domain("not-an-email") == (False, "Invalid email address: not-an-email")

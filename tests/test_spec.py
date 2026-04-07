@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from daylily_cognito.spec import _validate_config_template, spec
+from daylily_auth_cognito.cli.spec import _validate_config_template, spec
 
 
 class TestSpecValidator:
@@ -44,10 +44,14 @@ EXTRA_KEY: nope
         assert "Missing required key: COGNITO_USER_POOL_ID" in errors
         assert "Missing required key: COGNITO_APP_CLIENT_ID" in errors
 
-    def test_spec_declares_expected_config_path_and_template(self) -> None:
+    def test_spec_declares_expected_cli_policy_and_plugin(self) -> None:
         assert spec.prog_name == "daycog"
+        assert spec.dist_name == "daylily-auth-cognito"
         assert spec.config is not None
         assert spec.config.xdg_relative_path == "config.yaml"
+        assert spec.policy.profile == "platform-v2"
+        assert spec.plugins.explicit == ["daylily_auth_cognito.cli.plugins.register"]
+
         template = spec.config.template_bytes.decode("utf-8")
         assert "COGNITO_REGION" in template
         assert "COGNITO_USER_POOL_ID" in template

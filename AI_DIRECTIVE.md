@@ -1,4 +1,4 @@
-# AI Directive: daylily-cognito
+# AI Directive: daylily-auth-cognito
 
 ## Operational Policy
 
@@ -41,6 +41,8 @@ Optional file keys:
 - `COGNITO_DOMAIN`
 - `AWS_PROFILE`
 - `AWS_REGION`
+
+The CLI-only flat-file model is implemented in `daylily_auth_cognito.cli.config`; its internal config helper is not a runtime API.
 
 Unsupported old model:
 
@@ -135,3 +137,4 @@ Prefer `delete-pool` over `teardown` when the pool is explicitly known.
 - Do not use `aws cognito-idp` directly when this repo is designated for operations.
 - Treat destructive commands as high-risk and use `--force` only when the user explicitly intends the deletion.
 - Keep docs, tests, and examples aligned with the current flat-file config model and current command names.
+- Service runtime modules must not import `daylily_auth_cognito.cli` or `daylily_auth_cognito.cli.config`.

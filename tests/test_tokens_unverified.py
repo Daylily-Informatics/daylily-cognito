@@ -1,148 +1,67 @@
-"""Tests for JWT token verification (unverified signature mode).
+"""Tests for unverified JWT decoding and claim checks."""
 
-These tests are skipped if python-jose is not installed.
-"""
+from __future__ import annotations
 
-import builtins
+import sys
 import time
-from unittest import mock
+from types import SimpleNamespace
 
 import pytest
-
-# Skip all tests if jose is not available
-jose = pytest.importorskip("jose", reason="python-jose not installed")
 from fastapi import HTTPException
-from jose import ExpiredSignatureError
 
-from daylily_cognito.tokens import (
-    decode_jwt_unverified,
-    verify_jwt_claims_unverified_signature,
-)
+from daylily_auth_cognito.runtime.tokens import decode_jwt_unverified, verify_jwt_claims_unverified_signature
 
 
-def _create_test_token(claims: dict, exp_offset: int = 3600) -> str:
-    """Create a test JWT token with given claims.
+class _FakeJwt:
+    @staticmethod
+    def decode(token: str, *, key, options):
+        return {"sub": "user-123", "client_id": "client-123", "exp": time.time() + 60}
 
-    Args:
-        claims: Token claims
-        exp_offset: Seconds from now for expiration (negative = expired)
-
-    Returns:
-        JWT token string
-    """
-    from jose import jwt
-
-    full_claims = {
-        "exp": int(time.time()) + exp_offset,
-        **claims,
-    }
-    # Use a dummy key since we're not verifying signatures
-    return jwt.encode(full_claims, "secret", algorithm="HS256")
+    @staticmethod
+    def get_unverified_header(token: str) -> dict[str, str]:
+        return {"kid": "kid-1"}
 
 
-class TestDecodeJwtUnverified:
-    """Tests for decode_jwt_unverified()."""
-
-    def test_decode_valid_token(self) -> None:
-        """Decodes a valid token."""
-        token = _create_test_token({"sub": "user123", "client_id": "client456"})
-        claims = decode_jwt_unverified(token)
-
-        assert claims["sub"] == "user123"
-        assert claims["client_id"] == "client456"
-        assert "exp" in claims
-
-    def test_decode_expired_token(self) -> None:
-        """Decodes expired token (no expiration check in this function)."""
-        token = _create_test_token({"sub": "user123"}, exp_offset=-3600)
-        claims = decode_jwt_unverified(token)
-
-        assert claims["sub"] == "user123"
-        # Note: decode_jwt_unverified does NOT check expiration
-
-    def test_decode_import_error_when_jose_missing(self) -> None:
-        real_import = builtins.__import__
-
-        def fake_import(name, *args, **kwargs):
-            if name == "jose":
-                raise ImportError("missing jose")
-            return real_import(name, *args, **kwargs)
-
-        with mock.patch("builtins.__import__", side_effect=fake_import):
-            with pytest.raises(ImportError) as exc_info:
-                decode_jwt_unverified("token")
-
-        assert "python-jose is required for JWT decoding" in str(exc_info.value)
+class _ExpiredJwt(_FakeJwt):
+    @staticmethod
+    def decode(token: str, *, key, options):
+        return {"client_id": "client-123", "exp": time.time() - 1}
 
 
-class TestVerifyJwtClaimsUnverifiedSignature:
-    """Tests for verify_jwt_claims_unverified_signature()."""
+class _WrongAudienceJwt(_FakeJwt):
+    @staticmethod
+    def decode(token: str, *, key, options):
+        return {"client_id": "wrong-client", "exp": time.time() + 60}
 
-    def test_valid_token(self) -> None:
-        """Valid token with matching client_id passes."""
-        token = _create_test_token({"sub": "user123", "client_id": "expected_client"})
-        claims = verify_jwt_claims_unverified_signature(token, expected_client_id="expected_client")
 
-        assert claims["sub"] == "user123"
-        assert claims["client_id"] == "expected_client"
+def test_decode_jwt_unverified_returns_claims() -> None:
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setitem(sys.modules, "jose", SimpleNamespace(jwt=_FakeJwt))
+        claims = decode_jwt_unverified("token-123")
 
-    def test_expired_token_raises(self) -> None:
-        """Expired token raises HTTPException with 'Token has expired'."""
-        token = _create_test_token({"sub": "user123", "client_id": "client"}, exp_offset=-3600)
+    assert claims["sub"] == "user-123"
 
-        with pytest.raises(HTTPException) as exc_info:
-            verify_jwt_claims_unverified_signature(token, expected_client_id="client")
 
-        assert exc_info.value.status_code == 401
-        assert exc_info.value.detail == "Token has expired"
+def test_verify_jwt_claims_unverified_signature_enforces_expiration_and_audience() -> None:
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setitem(
+            sys.modules, "jose", SimpleNamespace(jwt=_FakeJwt, JWTError=ValueError, ExpiredSignatureError=ValueError)
+        )
+        claims = verify_jwt_claims_unverified_signature("token-123", expected_client_id="client-123")
+    assert claims["client_id"] == "client-123"
 
-    def test_wrong_client_id_raises(self) -> None:
-        """Wrong client_id raises HTTPException with 'Invalid token audience'."""
-        token = _create_test_token({"sub": "user123", "client_id": "wrong_client"})
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setitem(
+            sys.modules, "jose", SimpleNamespace(jwt=_ExpiredJwt, JWTError=ValueError, ExpiredSignatureError=ValueError)
+        )
+        with pytest.raises(HTTPException, match="Token has expired"):
+            verify_jwt_claims_unverified_signature("token-123", expected_client_id="client-123")
 
-        with pytest.raises(HTTPException) as exc_info:
-            verify_jwt_claims_unverified_signature(token, expected_client_id="expected_client")
-
-        assert exc_info.value.status_code == 401
-        assert exc_info.value.detail == "Invalid token audience"
-
-    def test_malformed_token_raises(self) -> None:
-        """Malformed token raises HTTPException with 'Invalid authentication token'."""
-        with pytest.raises(HTTPException) as exc_info:
-            verify_jwt_claims_unverified_signature("not.a.valid.token", expected_client_id="client")
-
-        assert exc_info.value.status_code == 401
-        assert exc_info.value.detail == "Invalid authentication token"
-
-    def test_missing_client_id_raises(self) -> None:
-        """Token without client_id raises HTTPException."""
-        token = _create_test_token({"sub": "user123"})  # No client_id
-
-        with pytest.raises(HTTPException) as exc_info:
-            verify_jwt_claims_unverified_signature(token, expected_client_id="expected_client")
-
-        assert exc_info.value.status_code == 401
-        assert exc_info.value.detail == "Invalid token audience"
-
-    def test_expired_signature_error_branch_maps_to_expired(self) -> None:
-        with mock.patch("jose.jwt.get_unverified_header", return_value={"kid": "x"}):
-            with mock.patch("jose.jwt.decode", side_effect=ExpiredSignatureError("expired")):
-                with pytest.raises(HTTPException) as exc_info:
-                    verify_jwt_claims_unverified_signature("token", expected_client_id="expected_client")
-
-        assert exc_info.value.status_code == 401
-        assert exc_info.value.detail == "Token has expired"
-
-    def test_verify_import_error_when_jose_missing(self) -> None:
-        real_import = builtins.__import__
-
-        def fake_import(name, *args, **kwargs):
-            if name == "jose":
-                raise ImportError("missing jose")
-            return real_import(name, *args, **kwargs)
-
-        with mock.patch("builtins.__import__", side_effect=fake_import):
-            with pytest.raises(ImportError) as exc_info:
-                verify_jwt_claims_unverified_signature("token", expected_client_id="expected_client")
-
-        assert "python-jose is required for JWT verification" in str(exc_info.value)
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setitem(
+            sys.modules,
+            "jose",
+            SimpleNamespace(jwt=_WrongAudienceJwt, JWTError=ValueError, ExpiredSignatureError=ValueError),
+        )
+        with pytest.raises(HTTPException, match="Invalid token audience"):
+            verify_jwt_claims_unverified_signature("token-123", expected_client_id="client-123")

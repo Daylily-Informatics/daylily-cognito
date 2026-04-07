@@ -2,7 +2,7 @@ import sys
 
 from cli_core_yo.app import run
 
-from daylily_cognito.spec import spec
+from .spec import spec
 
 
 def main() -> None:

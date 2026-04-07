@@ -1,104 +1,87 @@
-"""Tests for safe Cognito app client update helpers."""
+"""Tests for explicit app-client admin helpers."""
 
 from __future__ import annotations
 
 from unittest import mock
 
-from daylily_cognito._app_client_update import (
-    MUTABLE_USER_POOL_CLIENT_FIELDS,
+from daylily_auth_cognito.admin.app_clients import (
     REQUIRED_AUTH_FLOWS,
     build_user_pool_client_update_request,
-    merge_unique_strings,
-    update_user_pool_client_safe,
+    create_m2m_app_client,
+    update_app_client_auth_flows,
 )
+from daylily_auth_cognito.admin.client import CognitoAdminClient
 
 
-def _full_client_config() -> dict[str, object]:
-    return {
-        "UserPoolId": "us-west-2_TestPool",
+def _admin(client: mock.Mock | None = None) -> CognitoAdminClient:
+    return CognitoAdminClient(
+        region="us-west-2",
+        user_pool_id="pool-123",
+        app_client_id="client-123",
+        client=client or mock.Mock(),
+    )
+
+
+def test_build_user_pool_client_update_request_preserves_mutable_fields_only() -> None:
+    cognito = mock.Mock()
+    cognito.describe_user_pool_client.return_value = {
+        "UserPoolClient": {
+            "ClientName": "web-client",
+            "RefreshTokenValidity": 30,
+            "SupportedIdentityProviders": ["COGNITO"],
+            "ClientSecret": "not-mutable",
+        }
+    }
+    admin = _admin(cognito)
+
+    request = build_user_pool_client_update_request(
+        admin,
+        user_pool_id="pool-123",
+        client_id="client-123",
+        overrides={"LogoutURLs": ["https://app.example.test/logout"]},
+    )
+
+    assert request == {
+        "UserPoolId": "pool-123",
         "ClientId": "client-123",
-        "ClientName": "web-app",
+        "ClientName": "web-client",
         "RefreshTokenValidity": 30,
-        "AccessTokenValidity": 60,
-        "IdTokenValidity": 60,
-        "TokenValidityUnits": {"AccessToken": "minutes", "IdToken": "minutes", "RefreshToken": "days"},
-        "ReadAttributes": ["email", "name"],
-        "WriteAttributes": ["email"],
-        "ExplicitAuthFlows": ["ALLOW_USER_SRP_AUTH"],
         "SupportedIdentityProviders": ["COGNITO"],
-        "CallbackURLs": ["https://app.example.com/callback"],
-        "LogoutURLs": ["https://app.example.com/logout"],
-        "DefaultRedirectURI": "https://app.example.com/callback",
-        "AllowedOAuthFlows": ["code"],
-        "AllowedOAuthScopes": ["openid", "email", "profile"],
-        "AllowedOAuthFlowsUserPoolClient": True,
-        "AnalyticsConfiguration": {"ApplicationId": "abc"},
-        "PreventUserExistenceErrors": "ENABLED",
-        "EnableTokenRevocation": True,
-        "EnablePropagateAdditionalUserContextData": True,
-        "AuthSessionValidity": 3,
-        "RefreshTokenRotation": {"Feature": "ENABLED", "RetryGracePeriodSeconds": 10},
-        "ClientSecret": "secret",
-        "CreationDate": "2024-01-01T00:00:00Z",
-        "LastModifiedDate": "2024-01-02T00:00:00Z",
+        "LogoutURLs": ["https://app.example.test/logout"],
     }
 
 
-def test_build_update_request_preserves_mutable_fields_and_applies_overrides() -> None:
-    cognito = mock.MagicMock()
-    cognito.describe_user_pool_client.return_value = {"UserPoolClient": _full_client_config()}
+def test_update_app_client_auth_flows_merges_required_flows() -> None:
+    cognito = mock.Mock()
+    cognito.describe_user_pool_client.return_value = {
+        "UserPoolClient": {
+            "ClientName": "web-client",
+            "ExplicitAuthFlows": ["ALLOW_USER_SRP_AUTH"],
+        }
+    }
+    admin = _admin(cognito)
 
-    update_kwargs = build_user_pool_client_update_request(
-        cognito,
-        user_pool_id="us-west-2_TestPool",
-        client_id="client-123",
-        overrides={
-            "ClientName": "web-app-v2",
-            "CallbackURLs": ["https://app.example.com/new-callback"],
-        },
-    )
+    request = update_app_client_auth_flows(admin)
 
-    assert update_kwargs["UserPoolId"] == "us-west-2_TestPool"
-    assert update_kwargs["ClientId"] == "client-123"
-    assert update_kwargs["ClientName"] == "web-app-v2"
-    assert update_kwargs["CallbackURLs"] == ["https://app.example.com/new-callback"]
-    assert update_kwargs["LogoutURLs"] == ["https://app.example.com/logout"]
-    assert update_kwargs["DefaultRedirectURI"] == "https://app.example.com/callback"
-    assert update_kwargs["PreventUserExistenceErrors"] == "ENABLED"
-    assert update_kwargs["EnableTokenRevocation"] is True
-    assert "ClientSecret" not in update_kwargs
-    assert "CreationDate" not in update_kwargs
-    assert "LastModifiedDate" not in update_kwargs
-    assert set(update_kwargs) == {"UserPoolId", "ClientId", *MUTABLE_USER_POOL_CLIENT_FIELDS}
+    assert request["ClientId"] == "client-123"
+    assert set(REQUIRED_AUTH_FLOWS).issubset(set(request["ExplicitAuthFlows"]))
+    cognito.update_user_pool_client.assert_called_once_with(**request)
 
 
-def test_update_user_pool_client_safe_submits_merged_request() -> None:
-    cognito = mock.MagicMock()
-    cognito.describe_user_pool_client.return_value = {"UserPoolClient": _full_client_config()}
+def test_create_m2m_app_client_sets_admin_client_identity() -> None:
+    cognito = mock.Mock()
+    cognito.create_user_pool_client.return_value = {
+        "UserPoolClient": {
+            "ClientId": "m2m-client-123",
+            "ClientSecret": "secret-123",
+            "ClientName": "worker-app",
+        }
+    }
+    admin = _admin(cognito)
 
-    update_user_pool_client_safe(
-        cognito,
-        user_pool_id="us-west-2_TestPool",
-        client_id="client-123",
-        overrides={"AllowedOAuthScopes": ["openid", "email"]},
-    )
+    created = create_m2m_app_client(admin, client_name="worker-app", scopes=["api/read"])
 
-    cognito.update_user_pool_client.assert_called_once()
-    kwargs = cognito.update_user_pool_client.call_args.kwargs
-    assert kwargs["AllowedOAuthScopes"] == ["openid", "email"]
-    assert kwargs["LogoutURLs"] == ["https://app.example.com/logout"]
-    assert kwargs["AuthSessionValidity"] == 3
-
-
-def test_merge_unique_strings_preserves_existing_order() -> None:
-    merged = merge_unique_strings(
-        ["ALLOW_USER_SRP_AUTH", "ALLOW_ADMIN_USER_PASSWORD_AUTH"],
-        REQUIRED_AUTH_FLOWS,
-    )
-
-    assert merged == [
-        "ALLOW_USER_SRP_AUTH",
-        "ALLOW_ADMIN_USER_PASSWORD_AUTH",
-        "ALLOW_USER_PASSWORD_AUTH",
-        "ALLOW_REFRESH_TOKEN_AUTH",
-    ]
+    assert created["ClientId"] == "m2m-client-123"
+    assert admin.app_client_id == "m2m-client-123"
+    assert admin.app_client_secret == "secret-123"
+    cognito.create_user_pool_client.assert_called_once()

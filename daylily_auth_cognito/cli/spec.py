@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 import yaml
-from cli_core_yo.spec import CliSpec, ConfigSpec, PluginSpec, XdgSpec
+from cli_core_yo.spec import CliSpec, ConfigSpec, PluginSpec, PolicySpec, XdgSpec
 
 _ALLOWED_KEYS = {
     "AWS_PROFILE",
@@ -62,9 +62,10 @@ def _validate_config_template(content: str) -> list[str]:
 spec = CliSpec(
     prog_name="daycog",
     app_display_name="Daycog CLI",
-    dist_name="daylily-cognito",
+    dist_name="daylily-auth-cognito",
     root_help="Cognito authentication management commands",
     xdg=XdgSpec(app_dir_name="daycog"),
+    policy=PolicySpec(profile="platform-v2"),
     config=ConfigSpec(
         xdg_relative_path="config.yaml",
         template_bytes=(
@@ -84,7 +85,7 @@ spec = CliSpec(
     ),
     plugins=PluginSpec(
         explicit=[
-            "daylily_cognito.plugins.core.register",
+            "daylily_auth_cognito.cli.plugins.register",
         ]
     ),
 )

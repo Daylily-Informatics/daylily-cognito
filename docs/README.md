@@ -1,22 +1,15 @@
-# daylily-cognito Docs
+# daylily-auth-cognito Docs
 
-## Start Here
+Primary documents:
+- `../IMPLEMENTATION_PLAN.md`
+- `../MIGRATING_TO_2_0_0.md`
+- `../CHANGELOG_2_0_0.md`
 
-- [../README.md](../README.md): repo overview, quickstart, current flat-config model, and CLI surface
+Package boundaries:
+- `runtime/`: bearer verification, JWKS, M2M helpers, FastAPI dependency
+- `browser/`: Hosted UI login/callback/session helpers and Google OAuth HTTP helpers
+- `admin/`: Cognito mutation APIs
+- `cli/`: daycog command wiring and config handling
+- `policy/`: email-domain validation
 
-## Additional Repo Notes
-
-- [../CHANGELOG.md](../CHANGELOG.md): released changes
-- [../AI_DIRECTIVE.md](../AI_DIRECTIVE.md): project-specific implementation guidance
-
-## Source Of Truth
-
-Prefer the current code and root README for operational behavior.
-
-Current expected model:
-
-- one effective YAML config file selected by `daycog config path` or root `--config PATH`
-- built-in `daycog config ...` for generic config-file lifecycle
-- `daycog auth-config ...` for Cognito-specific config sync and inspection
-
-Older examples are useful only if they still match the current CLI and library APIs.
+CLI config handling is isolated in `daylily_auth_cognito.cli.config` and is not imported by runtime/browser/admin code.

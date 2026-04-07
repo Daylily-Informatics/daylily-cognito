@@ -15,7 +15,7 @@ import urllib.error
 import urllib.request
 from typing import Any, Optional
 
-LOGGER = logging.getLogger("daylily_cognito.jwks")
+LOGGER = logging.getLogger("daylily_auth_cognito.jwks")
 
 # Default cache TTL: 1 hour
 DEFAULT_CACHE_TTL_SECONDS = 3600

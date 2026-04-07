@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel", "setuptools-scm>=8.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "daylily-cognito"
+name = "daylily-auth-cognito"
 dynamic = ["version"]
 description = "Shared Cognito authentication library for FastAPI + Jinja2 web apps"
 readme = "README.md"
@@ -34,14 +34,12 @@ dependencies = [
     "fastapi>=0.104.0",
     "itsdangerous>=2.1.0",
     "PyYAML>=6.0",
+    "python-jose[cryptography]>=3.3.0",
     "typer>=0.9.0",
     "rich>=13.0.0",
 ]
 
 [project.optional-dependencies]
-auth = [
-    "python-jose[cryptography]>=3.3.0",
-]
 dev = [
     "bandit[toml]>=1.8.0",
     "httpx>=0.24.0",
@@ -52,15 +50,15 @@ dev = [
 ]
 
 [project.scripts]
-daycog = "daylily_cognito.cli:main"
+daycog = "daylily_auth_cognito.cli.main:main"
 
 [project.urls]
-Homepage = "https://github.com/Daylily-Informatics/daylily-cognito"
-Repository = "https://github.com/Daylily-Informatics/daylily-cognito"
+Homepage = "https://github.com/Daylily-Informatics/daylily-auth-cognito"
+Repository = "https://github.com/Daylily-Informatics/daylily-auth-cognito"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["daylily_cognito*"]
+include = ["daylily_auth_cognito*"]
 
 [tool.ruff]
 target-version = "py310"
@@ -82,13 +80,22 @@ ignore = [
 quote-style = "double"
 
 [tool.bandit]
-targets = ["daylily_cognito"]
+targets = ["daylily_auth_cognito"]
 exclude_dirs = ["tests", "dist", "build"]
 skips = ["B101", "B105", "B404", "B603", "B607"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+
+[tool.coverage.run]
+source = ["daylily_auth_cognito"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = true
+precision = 0
 
 [tool.setuptools_scm]
 # Derives version from git tags (e.g., 0.1.4 from tag "0.1.4")

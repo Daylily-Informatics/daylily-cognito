@@ -1,13 +1,14 @@
 # Changelog
 
-## Unreleased
+## 2.0.0
 
-- Switched the runtime config model to one flat YAML file selected by `daycog config path` or root `--config PATH`
-- Removed the old named-context and namespaced env override workflow from the current code and docs
-- Standardized current config workflows around `daycog config ...` and `daycog auth-config print/create/update`
-- Updated `setup`, `setup-with-google`, `auth-config create/update`, and `setup-google` to reflect the flat-file model
-- Modernized the CLI/config test suite and raised package coverage above 90%
-- Rewrote repo Markdown docs to match the current CLI and library behavior
+- Published the standalone `daylily-auth-cognito` distribution and `daylily_auth_cognito` package.
+- Split the codebase into `runtime/`, `browser/`, `admin/`, `cli/`, and `policy/`.
+- Moved Hosted UI session storage to a token-free normalized-principal model.
+- Made browser callback token exchange asynchronous in the web path.
+- Separated CLI config handling from runtime modules and kept it under `daylily_auth_cognito.cli.config`.
+- Curated the top-level export surface and removed the monolith-style package root API.
+- Updated docs, tests, and consumer repos to the new boundary model.
 
 ## 0.1.13
 

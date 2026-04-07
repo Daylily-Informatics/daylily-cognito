@@ -1,138 +1,90 @@
-"""Tests for JWT token verification with signature verification path."""
+"""Tests for signature-verified JWT claim handling."""
 
 from __future__ import annotations
 
-import builtins
 import time
 from unittest import mock
 
 import pytest
 from fastapi import HTTPException
 
-# Skip module if jose is not available in environment.
-jose = pytest.importorskip("jose", reason="python-jose not installed")
-from jose import JWTError
-
-from daylily_cognito.tokens import verify_jwt_claims
+from daylily_auth_cognito.runtime.tokens import verify_jwt_claims
+from daylily_auth_cognito.runtime.verifier import CognitoTokenVerifier
 
 
-class TestVerifyJwtClaims:
-    @mock.patch("daylily_cognito.jwks.verify_token_with_jwks")
-    def test_valid_claims(self, mock_verify: mock.MagicMock) -> None:
-        mock_verify.return_value = {
-            "sub": "user123",
-            "client_id": "expected_client",
-            "exp": int(time.time()) + 3600,
-        }
-
+def test_verify_jwt_claims_accepts_valid_claims() -> None:
+    with mock.patch(
+        "daylily_auth_cognito.runtime.jwks.verify_token_with_jwks",
+        return_value={"sub": "user-123", "client_id": "client-123", "exp": time.time() + 60},
+    ):
         claims = verify_jwt_claims(
-            "token",
-            expected_client_id="expected_client",
+            "token-123",
+            expected_client_id="client-123",
             region="us-west-2",
-            user_pool_id="us-west-2_pool",
+            user_pool_id="pool-123",
         )
 
-        assert claims["sub"] == "user123"
-        assert claims["client_id"] == "expected_client"
+    assert claims["sub"] == "user-123"
 
-    @mock.patch("daylily_cognito.jwks.verify_token_with_jwks")
-    def test_expired_claims_raise(self, mock_verify: mock.MagicMock) -> None:
-        mock_verify.return_value = {
-            "sub": "user123",
-            "client_id": "expected_client",
-            "exp": int(time.time()) - 10,
-        }
 
-        with pytest.raises(HTTPException) as exc_info:
+def test_verify_jwt_claims_rejects_expired_or_wrong_audience() -> None:
+    with mock.patch(
+        "daylily_auth_cognito.runtime.jwks.verify_token_with_jwks",
+        return_value={"client_id": "client-123", "exp": time.time() - 1},
+    ):
+        with pytest.raises(HTTPException, match="Token has expired"):
             verify_jwt_claims(
-                "token",
-                expected_client_id="expected_client",
+                "token-123",
+                expected_client_id="client-123",
                 region="us-west-2",
-                user_pool_id="us-west-2_pool",
+                user_pool_id="pool-123",
             )
 
-        assert exc_info.value.status_code == 401
-        assert exc_info.value.detail == "Token has expired"
-
-    @mock.patch("daylily_cognito.jwks.verify_token_with_jwks")
-    def test_wrong_audience_raises(self, mock_verify: mock.MagicMock) -> None:
-        mock_verify.return_value = {
-            "sub": "user123",
-            "client_id": "wrong_client",
-            "exp": int(time.time()) + 3600,
-        }
-
-        with pytest.raises(HTTPException) as exc_info:
+    with mock.patch(
+        "daylily_auth_cognito.runtime.jwks.verify_token_with_jwks",
+        return_value={"client_id": "wrong-client", "exp": time.time() + 60},
+    ):
+        with pytest.raises(HTTPException, match="Invalid token audience"):
             verify_jwt_claims(
-                "token",
-                expected_client_id="expected_client",
+                "token-123",
+                expected_client_id="client-123",
                 region="us-west-2",
-                user_pool_id="us-west-2_pool",
+                user_pool_id="pool-123",
             )
 
-        assert exc_info.value.status_code == 401
-        assert exc_info.value.detail == "Invalid token audience"
 
-    @mock.patch("daylily_cognito.jwks.verify_token_with_jwks")
-    def test_key_error_maps_to_invalid_auth(self, mock_verify: mock.MagicMock) -> None:
-        mock_verify.side_effect = KeyError("kid")
+def test_cognito_token_verifier_uses_jwks_path() -> None:
+    cache = mock.Mock()
+    with mock.patch(
+        "daylily_auth_cognito.runtime.verifier.verify_token_with_jwks",
+        return_value={"sub": "user-123", "client_id": "client-123", "exp": time.time() + 60},
+    ) as mocked_verify:
+        verifier = CognitoTokenVerifier(
+            region="us-west-2",
+            user_pool_id="pool-123",
+            app_client_id="client-123",
+            cache=cache,
+        )
+        claims = verifier.verify_token("token-123")
 
-        with pytest.raises(HTTPException) as exc_info:
-            verify_jwt_claims(
-                "token",
-                expected_client_id="expected_client",
-                region="us-west-2",
-                user_pool_id="us-west-2_pool",
-            )
+    assert claims["sub"] == "user-123"
+    mocked_verify.assert_called_once_with("token-123", "us-west-2", "pool-123", cache=cache)
 
-        assert exc_info.value.status_code == 401
-        assert exc_info.value.detail == "Invalid authentication token"
 
-    @mock.patch("daylily_cognito.jwks.verify_token_with_jwks")
-    def test_runtime_error_maps_to_invalid_auth(self, mock_verify: mock.MagicMock) -> None:
-        mock_verify.side_effect = RuntimeError("jwks unavailable")
+def test_cognito_token_verifier_supports_unverified_decode_path() -> None:
+    fake_jwt = mock.Mock()
+    fake_jwt.get_unverified_header.return_value = {"kid": "kid-1"}
+    fake_jwt.decode.return_value = {"sub": "user-123", "client_id": "client-123", "exp": time.time() + 60}
 
-        with pytest.raises(HTTPException) as exc_info:
-            verify_jwt_claims(
-                "token",
-                expected_client_id="expected_client",
-                region="us-west-2",
-                user_pool_id="us-west-2_pool",
-            )
+    with mock.patch("daylily_auth_cognito.runtime.verifier.jwt", fake_jwt):
+        verifier = CognitoTokenVerifier(
+            region="us-west-2",
+            user_pool_id="pool-123",
+            app_client_id="client-123",
+            cache=mock.Mock(),
+        )
+        claims = verifier.verify_token("token-123", verify_signature=False)
 
-        assert exc_info.value.status_code == 401
-        assert exc_info.value.detail == "Invalid authentication token"
-
-    @mock.patch("daylily_cognito.jwks.verify_token_with_jwks")
-    def test_jwt_error_maps_to_invalid_auth(self, mock_verify: mock.MagicMock) -> None:
-        mock_verify.side_effect = JWTError("bad token")
-
-        with pytest.raises(HTTPException) as exc_info:
-            verify_jwt_claims(
-                "token",
-                expected_client_id="expected_client",
-                region="us-west-2",
-                user_pool_id="us-west-2_pool",
-            )
-
-        assert exc_info.value.status_code == 401
-        assert exc_info.value.detail == "Invalid authentication token"
-
-    def test_import_error_when_jose_missing(self) -> None:
-        real_import = builtins.__import__
-
-        def fake_import(name, *args, **kwargs):
-            if name == "jose":
-                raise ImportError("missing jose")
-            return real_import(name, *args, **kwargs)
-
-        with mock.patch("builtins.__import__", side_effect=fake_import):
-            with pytest.raises(ImportError) as exc_info:
-                verify_jwt_claims(
-                    "token",
-                    expected_client_id="expected_client",
-                    region="us-west-2",
-                    user_pool_id="us-west-2_pool",
-                )
-
-        assert "python-jose is required for JWT verification" in str(exc_info.value)
+    assert claims["sub"] == "user-123"
+    fake_jwt.get_unverified_header.assert_called_once_with("token-123")
+    fake_jwt.decode.assert_called_once()

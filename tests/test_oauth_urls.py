@@ -1,320 +1,166 @@
-"""Tests for OAuth URL builders and token exchange."""
+"""Tests for Cognito Hosted UI URL builders and code exchange."""
 
+from __future__ import annotations
+
+import asyncio
+import io
 import json
+import urllib.error
 from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from daylily_cognito.config import CognitoConfig
-from daylily_cognito.oauth import (
+from daylily_auth_cognito.browser.oauth import (
     build_authorization_url,
     build_logout_url,
     exchange_authorization_code,
-    refresh_with_refresh_token,
+    exchange_authorization_code_async,
 )
 
 
-class TestBuildAuthorizationUrl:
-    """Tests for build_authorization_url()."""
+class _Response:
+    def __init__(self, payload: dict[str, object]) -> None:
+        self._payload = payload
 
-    def test_basic_url(self) -> None:
-        """Builds basic authorization URL with required params."""
-        url = build_authorization_url(
-            domain="myapp.auth.us-west-2.amazoncognito.com",
-            client_id="abc123",
-            redirect_uri="http://localhost:8000/callback",
-        )
+    def read(self) -> bytes:
+        return json.dumps(self._payload).encode("utf-8")
 
-        parsed = urlparse(url)
-        assert parsed.scheme == "https"
-        assert parsed.netloc == "myapp.auth.us-west-2.amazoncognito.com"
-        assert parsed.path == "/oauth2/authorize"
+    def __enter__(self) -> "_Response":
+        return self
 
-        params = parse_qs(parsed.query)
-        assert params["client_id"] == ["abc123"]
-        assert params["redirect_uri"] == ["http://localhost:8000/callback"]
-        assert params["response_type"] == ["code"]
-        assert params["scope"] == ["openid email profile"]
-
-    def test_scheme_prefixed_domain(self) -> None:
-        """Normalizes scheme-prefixed domains without double-prepending https."""
-        url = build_authorization_url(
-            domain="https://myapp.auth.us-west-2.amazoncognito.com",
-            client_id="abc123",
-            redirect_uri="http://localhost:8000/callback",
-        )
-
-        parsed = urlparse(url)
-        assert parsed.scheme == "https"
-        assert parsed.netloc == "myapp.auth.us-west-2.amazoncognito.com"
-        assert parsed.path == "/oauth2/authorize"
-
-    def test_with_state(self) -> None:
-        """Includes state parameter when provided."""
-        url = build_authorization_url(
-            domain="myapp.auth.us-west-2.amazoncognito.com",
-            client_id="abc123",
-            redirect_uri="http://localhost:8000/callback",
-            state="csrf-token-123",
-        )
-
-        params = parse_qs(urlparse(url).query)
-        assert params["state"] == ["csrf-token-123"]
-
-    def test_with_pkce(self) -> None:
-        """Includes PKCE parameters when provided."""
-        url = build_authorization_url(
-            domain="myapp.auth.us-west-2.amazoncognito.com",
-            client_id="abc123",
-            redirect_uri="http://localhost:8000/callback",
-            code_challenge="challenge123",
-            code_challenge_method="S256",
-        )
-
-        params = parse_qs(urlparse(url).query)
-        assert params["code_challenge"] == ["challenge123"]
-        assert params["code_challenge_method"] == ["S256"]
-
-    def test_custom_scope(self) -> None:
-        """Uses custom scope when provided."""
-        url = build_authorization_url(
-            domain="myapp.auth.us-west-2.amazoncognito.com",
-            client_id="abc123",
-            redirect_uri="http://localhost:8000/callback",
-            scope="openid",
-        )
-
-        params = parse_qs(urlparse(url).query)
-        assert params["scope"] == ["openid"]
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        return False
 
 
-class TestBuildLogoutUrl:
-    """Tests for build_logout_url()."""
+def test_build_authorization_url_includes_expected_query_fields() -> None:
+    url = build_authorization_url(
+        domain="https://auth.example.test",
+        client_id="client-123",
+        redirect_uri="https://app.example.test/auth/callback",
+        state="state-123",
+        code_challenge="challenge-123",
+        code_challenge_method="S256",
+    )
 
-    def test_basic_url(self) -> None:
-        """Builds basic logout URL."""
-        url = build_logout_url(
-            domain="myapp.auth.us-west-2.amazoncognito.com",
-            client_id="abc123",
-            redirect_uri="http://localhost:8000/auth/callback",
-        )
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query)
 
-        parsed = urlparse(url)
-        assert parsed.scheme == "https"
-        assert parsed.netloc == "myapp.auth.us-west-2.amazoncognito.com"
-        assert parsed.path == "/logout"
-
-        params = parse_qs(parsed.query)
-        assert params["client_id"] == ["abc123"]
-        assert params["redirect_uri"] == ["http://localhost:8000/auth/callback"]
-        assert params["response_type"] == ["code"]
-
-    def test_stable_query_params(self) -> None:
-        """Query params are stable across calls."""
-        url1 = build_logout_url(
-            domain="myapp.auth.us-west-2.amazoncognito.com",
-            client_id="abc123",
-            redirect_uri="http://localhost:8000/auth/callback",
-        )
-        url2 = build_logout_url(
-            domain="myapp.auth.us-west-2.amazoncognito.com",
-            client_id="abc123",
-            redirect_uri="http://localhost:8000/auth/callback",
-        )
-        assert url1 == url2
-
-    def test_scheme_prefixed_domain(self) -> None:
-        """Normalizes scheme-prefixed domains without double-prepending https."""
-        url = build_logout_url(
-            domain="https://myapp.auth.us-west-2.amazoncognito.com",
-            client_id="abc123",
-            redirect_uri="http://localhost:8000/auth/callback",
-        )
-
-        parsed = urlparse(url)
-        assert parsed.scheme == "https"
-        assert parsed.netloc == "myapp.auth.us-west-2.amazoncognito.com"
-        assert parsed.path == "/logout"
-
-    def test_logout_uri_alias_is_still_accepted(self) -> None:
-        """Legacy logout_uri callers still emit the managed login contract."""
-        url = build_logout_url(
-            domain="myapp.auth.us-west-2.amazoncognito.com",
-            client_id="abc123",
-            logout_uri="http://localhost:8000/auth/callback",
-        )
-
-        params = parse_qs(urlparse(url).query)
-        assert params["redirect_uri"] == ["http://localhost:8000/auth/callback"]
-        assert params["response_type"] == ["code"]
+    assert parsed.scheme == "https"
+    assert parsed.netloc == "auth.example.test"
+    assert parsed.path == "/oauth2/authorize"
+    assert params["client_id"] == ["client-123"]
+    assert params["redirect_uri"] == ["https://app.example.test/auth/callback"]
+    assert params["response_type"] == ["code"]
+    assert params["scope"] == ["openid email profile"]
+    assert params["state"] == ["state-123"]
+    assert params["code_challenge"] == ["challenge-123"]
+    assert params["code_challenge_method"] == ["S256"]
 
 
-# ---------------------------------------------------------------------------
-# exchange_authorization_code (mocked HTTP)
-# ---------------------------------------------------------------------------
+def test_build_authorization_url_supports_custom_scope() -> None:
+    url = build_authorization_url(
+        domain="auth.example.test",
+        client_id="client-123",
+        redirect_uri="https://app.example.test/auth/callback",
+        scope="openid",
+    )
+
+    params = parse_qs(urlparse(url).query)
+    assert params["scope"] == ["openid"]
 
 
-class TestExchangeAuthorizationCode:
-    """Tests for exchange_authorization_code()."""
+def test_build_logout_url_uses_normalized_domain() -> None:
+    url = build_logout_url(
+        domain="https://auth.example.test/",
+        client_id="client-123",
+        logout_uri="https://app.example.test/logout",
+    )
 
-    @mock.patch("daylily_cognito.oauth.urllib.request.urlopen")
-    def test_successful_exchange(self, mock_urlopen: mock.MagicMock) -> None:
-        token_body = {
-            "access_token": "at-123",
-            "id_token": "id-456",
-            "refresh_token": "rt-789",
-            "token_type": "Bearer",
-            "expires_in": 3600,
-        }
-        mock_resp = mock.MagicMock()
-        mock_resp.read.return_value = json.dumps(token_body).encode("utf-8")
-        mock_resp.__enter__ = mock.MagicMock(return_value=mock_resp)
-        mock_resp.__exit__ = mock.MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_resp
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query)
 
-        result = exchange_authorization_code(
-            domain="myapp.auth.us-west-2.amazoncognito.com",
-            client_id="abc123",
-            code="auth-code",
-            redirect_uri="http://localhost:8000/callback",
-        )
+    assert parsed.scheme == "https"
+    assert parsed.netloc == "auth.example.test"
+    assert parsed.path == "/logout"
+    assert params["client_id"] == ["client-123"]
+    assert params["logout_uri"] == ["https://app.example.test/logout"]
 
-        assert result["access_token"] == "at-123"
-        assert result["id_token"] == "id-456"
-        assert result["refresh_token"] == "rt-789"
 
-        req = mock_urlopen.call_args[0][0]
-        assert req.method == "POST"
-        assert "myapp.auth.us-west-2.amazoncognito.com" in req.full_url
-        assert b"grant_type=authorization_code" in req.data
+def test_build_logout_url_is_stable_across_calls() -> None:
+    url1 = build_logout_url(
+        domain="auth.example.test",
+        client_id="client-123",
+        logout_uri="https://app.example.test/logout",
+    )
+    url2 = build_logout_url(
+        domain="auth.example.test",
+        client_id="client-123",
+        logout_uri="https://app.example.test/logout",
+    )
 
-    @mock.patch("daylily_cognito.oauth.urllib.request.urlopen")
-    def test_with_client_secret_and_code_verifier(self, mock_urlopen: mock.MagicMock) -> None:
-        mock_resp = mock.MagicMock()
-        mock_resp.read.return_value = b'{"access_token": "at"}'
-        mock_resp.__enter__ = mock.MagicMock(return_value=mock_resp)
-        mock_resp.__exit__ = mock.MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_resp
+    assert url1 == url2
 
+
+def test_exchange_authorization_code_posts_form_and_returns_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_urlopen = mock.Mock(return_value=_Response({"access_token": "access-123", "id_token": "id-123"}))
+    monkeypatch.setattr("daylily_auth_cognito.browser.oauth.urllib.request.urlopen", fake_urlopen)
+
+    tokens = exchange_authorization_code(
+        domain="auth.example.test",
+        client_id="client-123",
+        code="code-123",
+        redirect_uri="https://app.example.test/auth/callback",
+        client_secret="secret-123",
+        code_verifier="verifier-123",
+    )
+
+    assert tokens["access_token"] == "access-123"
+    request = fake_urlopen.call_args.args[0]
+    body = request.data.decode("utf-8")
+    assert request.method == "POST"
+    assert request.full_url == "https://auth.example.test/oauth2/token"
+    assert "grant_type=authorization_code" in body
+    assert "client_id=client-123" in body
+    assert "client_secret=secret-123" in body
+    assert "code_verifier=verifier-123" in body
+
+
+def test_exchange_authorization_code_wraps_http_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    http_error = urllib.error.HTTPError(
+        url="https://auth.example.test/oauth2/token",
+        code=401,
+        msg="unauthorized",
+        hdrs=None,
+        fp=io.BytesIO(b"bad-code"),
+    )
+    monkeypatch.setattr(
+        "daylily_auth_cognito.browser.oauth.urllib.request.urlopen",
+        mock.Mock(side_effect=http_error),
+    )
+
+    with pytest.raises(RuntimeError, match="HTTP 401"):
         exchange_authorization_code(
-            domain="d.auth.us-west-2.amazoncognito.com",
-            client_id="cid",
-            code="code",
-            redirect_uri="http://localhost/cb",
-            client_secret="secret",
-            code_verifier="verifier",
+            domain="auth.example.test",
+            client_id="client-123",
+            code="code-123",
+            redirect_uri="https://app.example.test/auth/callback",
         )
 
-        req = mock_urlopen.call_args[0][0]
-        body = req.data.decode("utf-8")
-        assert "client_secret=secret" in body
-        assert "code_verifier=verifier" in body
 
-    @mock.patch("daylily_cognito.oauth.urllib.request.urlopen")
-    def test_scheme_prefixed_domain(self, mock_urlopen: mock.MagicMock) -> None:
-        mock_resp = mock.MagicMock()
-        mock_resp.read.return_value = b'{"access_token": "at"}'
-        mock_resp.__enter__ = mock.MagicMock(return_value=mock_resp)
-        mock_resp.__exit__ = mock.MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_resp
+def test_exchange_authorization_code_async_uses_thread_wrapper(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "daylily_auth_cognito.browser.oauth.exchange_authorization_code",
+        mock.Mock(return_value={"access_token": "access-123"}),
+    )
 
-        exchange_authorization_code(
-            domain="https://d.auth.us-west-2.amazoncognito.com",
-            client_id="cid",
-            code="code",
-            redirect_uri="http://localhost/cb",
+    tokens = asyncio.run(
+        exchange_authorization_code_async(
+            domain="auth.example.test",
+            client_id="client-123",
+            code="code-123",
+            redirect_uri="https://app.example.test/auth/callback",
         )
+    )
 
-        req = mock_urlopen.call_args[0][0]
-        assert req.full_url == "https://d.auth.us-west-2.amazoncognito.com/oauth2/token"
-
-    @mock.patch("daylily_cognito.oauth.urllib.request.urlopen")
-    def test_exchange_failure(self, mock_urlopen: mock.MagicMock) -> None:
-        import urllib.error
-
-        err = urllib.error.HTTPError(
-            url="https://x/oauth2/token",
-            code=400,
-            msg="Bad Request",
-            hdrs=mock.MagicMock(),
-            fp=mock.MagicMock(),
-        )
-        err.read = mock.MagicMock(return_value=b'{"error":"invalid_grant"}')
-        mock_urlopen.side_effect = err
-
-        with pytest.raises(RuntimeError, match="Token exchange failed"):
-            exchange_authorization_code(
-                domain="d.auth.us-west-2.amazoncognito.com",
-                client_id="cid",
-                code="bad",
-                redirect_uri="http://localhost/cb",
-            )
-
-
-# ---------------------------------------------------------------------------
-# refresh_with_refresh_token (mocked boto3)
-# ---------------------------------------------------------------------------
-
-
-class TestRefreshWithRefreshToken:
-    """Tests for refresh_with_refresh_token()."""
-
-    def _make_config(self, **overrides) -> CognitoConfig:
-        defaults = {
-            "region": "us-west-2",
-            "user_pool_id": "us-west-2_TestPool",
-            "app_client_id": "client123",
-        }
-        defaults.update(overrides)
-        return CognitoConfig(**defaults)
-
-    @mock.patch("boto3.Session")
-    def test_successful_refresh(self, mock_session_cls: mock.MagicMock) -> None:
-        mock_cognito = mock.MagicMock()
-        mock_cognito.admin_initiate_auth.return_value = {
-            "AuthenticationResult": {
-                "AccessToken": "new-at",
-                "IdToken": "new-id",
-                "ExpiresIn": 3600,
-                "TokenType": "Bearer",
-            }
-        }
-        mock_session_cls.return_value.client.return_value = mock_cognito
-
-        config = self._make_config()
-        result = refresh_with_refresh_token(config, "old-refresh-token")
-
-        assert result["access_token"] == "new-at"
-        assert result["id_token"] == "new-id"
-        assert result["expires_in"] == 3600
-        assert result["token_type"] == "Bearer"
-
-        mock_cognito.admin_initiate_auth.assert_called_once_with(
-            UserPoolId="us-west-2_TestPool",
-            ClientId="client123",
-            AuthFlow="REFRESH_TOKEN_AUTH",
-            AuthParameters={"REFRESH_TOKEN": "old-refresh-token"},
-        )
-
-    @mock.patch("boto3.Session")
-    def test_uses_profile_from_config(self, mock_session_cls: mock.MagicMock) -> None:
-        mock_cognito = mock.MagicMock()
-        mock_cognito.admin_initiate_auth.return_value = {"AuthenticationResult": {}}
-        mock_session_cls.return_value.client.return_value = mock_cognito
-
-        config = self._make_config(aws_profile="my-profile")
-        refresh_with_refresh_token(config, "rt")
-
-        mock_session_cls.assert_called_once_with(region_name="us-west-2", profile_name="my-profile")
-
-    @mock.patch("boto3.Session")
-    def test_profile_override(self, mock_session_cls: mock.MagicMock) -> None:
-        mock_cognito = mock.MagicMock()
-        mock_cognito.admin_initiate_auth.return_value = {"AuthenticationResult": {}}
-        mock_session_cls.return_value.client.return_value = mock_cognito
-
-        config = self._make_config(aws_profile="config-profile")
-        refresh_with_refresh_token(config, "rt", profile="override-profile")
-
-        mock_session_cls.assert_called_once_with(region_name="us-west-2", profile_name="override-profile")
+    assert tokens == {"access_token": "access-123"}
