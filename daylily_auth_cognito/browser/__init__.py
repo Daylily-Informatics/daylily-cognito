@@ -17,9 +17,9 @@ from .oauth import (
     exchange_authorization_code_async,
 )
 from .session import (
+    SESSION_EXPIRED_REASON,
     CognitoWebAuthError,
     CognitoWebSessionConfig,
-    SESSION_EXPIRED_REASON,
     SessionPrincipal,
     clear_session_principal,
     complete_cognito_callback,

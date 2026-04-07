@@ -6,8 +6,8 @@ from unittest import mock
 
 import pytest
 
-from daylily_auth_cognito.admin.client import CognitoAdminClient
 from daylily_auth_cognito.admin import pools
+from daylily_auth_cognito.admin.client import CognitoAdminClient
 
 
 def _admin(client: mock.Mock | None = None, **overrides) -> CognitoAdminClient:

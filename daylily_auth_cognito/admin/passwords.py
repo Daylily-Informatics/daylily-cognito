@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from botocore.exceptions import ClientError
-
 from .client import CognitoAdminClient
 
 

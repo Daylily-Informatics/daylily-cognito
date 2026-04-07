@@ -4,13 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from unittest import mock
 
 from cli_core_yo.app import create_app
 from typer.testing import CliRunner
 
 from daylily_auth_cognito.cli.plugins import config as plugin_config
-from daylily_auth_cognito.cli.plugins import status as plugin_status
 from daylily_auth_cognito.cli.spec import spec
 
 

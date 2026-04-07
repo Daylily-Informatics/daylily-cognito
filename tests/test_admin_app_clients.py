@@ -8,7 +8,6 @@ import pytest
 
 from daylily_auth_cognito.admin.app_clients import (
     REQUIRED_AUTH_FLOWS,
-    build_user_pool_client_update_request,
     create_app_client,
     create_m2m_app_client,
     delete_app_client,

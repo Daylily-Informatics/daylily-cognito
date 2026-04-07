@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 import typer
 from cli_core_yo import ccyo_out
 from cli_core_yo.registry import CommandRegistry

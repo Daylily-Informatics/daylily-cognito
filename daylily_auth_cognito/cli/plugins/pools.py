@@ -12,7 +12,6 @@ from daylily_auth_cognito.admin.pools import (
     delete_user_pool,
     ensure_user_pool,
     ensure_user_pool_domain,
-    find_user_pool_id_by_name,
     list_user_pools,
     resolve_pool,
 )
