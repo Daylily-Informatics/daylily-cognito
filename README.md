@@ -2,7 +2,7 @@
 
 `daylily-auth-cognito` is the standalone Cognito auth repo for Daylily. It publishes the `daylily_auth_cognito` Python package and the `daycog` CLI.
 
-Version `2.0.0` is a breaking refactor with hard boundaries:
+The `2.0` line is a breaking refactor with hard boundaries:
 - `runtime/`: JWT verification and FastAPI bearer auth
 - `browser/`: Hosted UI session auth with token-free session storage
 - `admin/`: Cognito pool, app-client, user, password, and federation mutations
@@ -21,6 +21,8 @@ For development in this repo:
 source ./activate
 pytest -q
 ```
+
+`activate` installs the editable repo and the published `cli-core-yo==2.0.0` dependency.
 
 ## Public API
 

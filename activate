@@ -37,7 +37,6 @@ if [ -z "$_DAYCOG_ACTIVATE_DIR" ]; then
 fi
 
 _DAYCOG_VENV_DIR="$_DAYCOG_ACTIVATE_DIR/.venv"
-_DAYCOG_CLI_CORE_YO_DIR="$_DAYCOG_ACTIVATE_DIR/../cli-core-yo"
 
 _daycog_distribution_is_editable_from_repo() {
   python - "$1" <<'PY' >/dev/null 2>&1
@@ -100,6 +99,19 @@ raise SystemExit(
 PY
 }
 
+_daycog_distribution_has_resolved_version() {
+  python -I - <<'PY' >/dev/null 2>&1
+import importlib.metadata
+
+try:
+    version = importlib.metadata.version("daylily-auth-cognito").strip()
+except importlib.metadata.PackageNotFoundError:
+    raise SystemExit(1)
+
+raise SystemExit(0 if version and version != "0.0.0" else 1)
+PY
+}
+
 if [ ! -x "$_DAYCOG_VENV_DIR/bin/python" ]; then
   echo "Creating virtual environment at $_DAYCOG_VENV_DIR"
   if ! command -v python3.12 >/dev/null 2>&1; then
@@ -118,14 +130,17 @@ if ! . "$_DAYCOG_VENV_DIR/bin/activate"; then
   return 1
 fi
 
-echo "Ensuring pip/setuptools/wheel support editable installs..."
-if ! python -m pip install --upgrade pip setuptools wheel >/dev/null; then
-  echo "Failed to install pip/setuptools/wheel" >&2
+echo "Ensuring pip/setuptools/wheel/setuptools-scm/build support editable installs..."
+if ! python -m pip install --upgrade pip setuptools wheel setuptools-scm build >/dev/null; then
+  echo "Failed to install pip/setuptools/wheel/setuptools-scm/build" >&2
   return 1
 fi
 
 _DAYCOG_NEEDS_INSTALL=0
 if ! _daycog_distribution_is_editable_from_repo "$_DAYCOG_ACTIVATE_DIR"; then
+  _DAYCOG_NEEDS_INSTALL=1
+fi
+if ! _daycog_distribution_has_resolved_version; then
   _DAYCOG_NEEDS_INSTALL=1
 fi
 if ! _daycog_distribution_requires_expected_cli_core_yo; then
@@ -134,9 +149,14 @@ fi
 if ! python -c "import pytest" >/dev/null 2>&1; then
   _DAYCOG_NEEDS_INSTALL=1
 fi
+if ! python -c "import build" >/dev/null 2>&1; then
+  _DAYCOG_NEEDS_INSTALL=1
+fi
+if ! python -c "import setuptools_scm" >/dev/null 2>&1; then
+  _DAYCOG_NEEDS_INSTALL=1
+fi
 
 if [ "$_DAYCOG_NEEDS_INSTALL" = "1" ]; then
-  export SETUPTOOLS_SCM_PRETEND_VERSION="0.4.4"
   echo "Installing daylily-auth-cognito in editable mode..."
   if ! python -m pip install --no-build-isolation -e "${_DAYCOG_ACTIVATE_DIR}[dev]"; then
     echo "Editable install failed" >&2
@@ -146,17 +166,6 @@ if [ "$_DAYCOG_NEEDS_INSTALL" = "1" ]; then
     echo "daylily-auth-cognito is not installed editable from $_DAYCOG_ACTIVATE_DIR" >&2
     return 1
   fi
-fi
-
-if [ -d "$_DAYCOG_CLI_CORE_YO_DIR" ] && [ -f "$_DAYCOG_CLI_CORE_YO_DIR/pyproject.toml" ]; then
-  echo "Using cli-core-yo from sibling checkout via PYTHONPATH..."
-  case ":${PYTHONPATH:-}:" in
-    *:"$_DAYCOG_CLI_CORE_YO_DIR":*)
-      ;;
-    *)
-      export PYTHONPATH="$_DAYCOG_CLI_CORE_YO_DIR${PYTHONPATH:+:$PYTHONPATH}"
-      ;;
-  esac
 fi
 
 echo "daycog is ready: $(command -v daycog)"
@@ -224,10 +233,10 @@ daycog() {
 }
 
 unset _DAYCOG_ACTIVATE_DIR
-unset _DAYCOG_CLI_CORE_YO_DIR
 unset _DAYCOG_SOURCE
 unset _DAYCOG_SOURCED
 unset _DAYCOG_VENV_DIR
 unset _DAYCOG_NEEDS_INSTALL
 unset -f _daycog_distribution_is_editable_from_repo
+unset -f _daycog_distribution_has_resolved_version
 unset -f _daycog_distribution_requires_expected_cli_core_yo

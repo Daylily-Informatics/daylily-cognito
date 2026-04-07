@@ -15,7 +15,7 @@ From repo root, always start with:
 source ./activate
 ```
 
-This prepares `.venv`, installs the repo editable, exposes `daycog`, and points imports at the sibling `../cli-core-yo` checkout when present.
+This prepares `.venv`, installs the repo editable, exposes `daycog`, and uses the published CLI dependency pinned by `pyproject.toml`.
 
 ## Config Model
 
