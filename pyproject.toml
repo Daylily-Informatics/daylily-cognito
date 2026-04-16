@@ -30,7 +30,7 @@ classifiers = [
 ]
 dependencies = [
     "boto3>=1.26.0",
-    "cli-core-yo==2.0.0",
+    "cli-core-yo==2.1.0",
     "fastapi>=0.104.0",
     "itsdangerous>=2.1.0",
     "PyYAML>=6.0",
