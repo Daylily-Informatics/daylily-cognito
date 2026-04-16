@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlsplit
 
 import yaml
 from cli_core_yo.runtime import get_context
@@ -35,6 +36,20 @@ _SCALAR_TYPES = (str, int, float, bool)
 
 class ConfigError(ValueError):
     """Raised when the flat config file is missing or invalid."""
+
+
+def _validate_cognito_domain_value(value: Any) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return ""
+    parsed = urlsplit(normalized)
+    if parsed.scheme or parsed.netloc:
+        raise ConfigError("COGNITO_DOMAIN must be a bare host without scheme")
+    if "/" in normalized:
+        raise ConfigError("COGNITO_DOMAIN must be a bare host without path")
+    if any(char.isspace() for char in normalized):
+        raise ConfigError("COGNITO_DOMAIN must not contain whitespace")
+    return normalized
 
 
 @dataclass(frozen=True)
@@ -221,6 +236,12 @@ def _validate_payload(payload: Any, *, require_required_keys: bool) -> list[str]
             if value is None or not str(value).strip():
                 errors.append(f"Missing required key: {key}")
 
+    if "COGNITO_DOMAIN" in payload and payload.get("COGNITO_DOMAIN") is not None:
+        try:
+            _validate_cognito_domain_value(payload.get("COGNITO_DOMAIN"))
+        except ConfigError as exc:
+            errors.append(str(exc))
+
     return errors
 
 
@@ -229,7 +250,11 @@ def _normalize_payload(payload: dict[str, Any]) -> dict[str, str]:
     for key in sorted(CONFIG_KEYS):
         if key not in payload or payload.get(key) is None:
             continue
-        value = str(payload[key]).strip()
+        value = (
+            _validate_cognito_domain_value(payload[key])
+            if key == "COGNITO_DOMAIN"
+            else str(payload[key]).strip()
+        )
         if value:
             normalized[key] = value
     return normalized
@@ -252,7 +277,11 @@ def _normalize_for_write(values: dict[str, Any]) -> dict[str, str]:
     ]:
         if key not in values or values.get(key) is None:
             continue
-        value = str(values[key]).strip()
+        value = (
+            _validate_cognito_domain_value(values[key])
+            if key == "COGNITO_DOMAIN"
+            else str(values[key]).strip()
+        )
         if value:
             normalized[key] = value
     return normalized

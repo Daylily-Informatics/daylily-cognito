@@ -135,14 +135,12 @@ def test_domain_and_config_builders_normalize_expected_values() -> None:
         == "auth-prefix.auth.us-west-2.amazoncognito.com"
     )
     assert (
-        plugin._resolve_cognito_domain({"CustomDomain": "https://auth.example.test"}, "us-west-2")
-        == "https://auth.example.test"
-    )
-    assert (
         plugin._resolve_cognito_domain({"CustomDomain": {"DomainName": "auth.example.test"}}, "us-west-2")
         == "auth.example.test"
     )
     assert plugin._resolve_cognito_domain({}, "us-west-2") == ""
+    with pytest.raises(ValueError, match="bare host"):
+        plugin._resolve_cognito_domain({"CustomDomain": "https://auth.example.test"}, "us-west-2")
 
     pool = {
         "pool_id": "pool-123",
