@@ -22,7 +22,7 @@ source ./activate
 pytest -q
 ```
 
-`activate` installs the editable repo and the published `cli-core-yo==2.0.0` dependency.
+`activate` installs the editable repo and the published `cli-core-yo==2.1.1` dependency.
 
 ## Public API
 
