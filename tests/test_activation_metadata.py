@@ -41,9 +41,7 @@ def test_activate_reads_cli_core_requirement_from_pyproject() -> None:
     activate_script = (REPO_ROOT / "activate").read_text(encoding="utf-8")
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     cli_core_requirement = next(
-        dependency
-        for dependency in pyproject["project"]["dependencies"]
-        if dependency.startswith("cli-core-yo")
+        dependency for dependency in pyproject["project"]["dependencies"] if dependency.startswith("cli-core-yo")
     )
 
     assert cli_core_requirement == "cli-core-yo==2.1.0"

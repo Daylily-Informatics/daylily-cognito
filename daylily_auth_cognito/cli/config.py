@@ -250,11 +250,7 @@ def _normalize_payload(payload: dict[str, Any]) -> dict[str, str]:
     for key in sorted(CONFIG_KEYS):
         if key not in payload or payload.get(key) is None:
             continue
-        value = (
-            _validate_cognito_domain_value(payload[key])
-            if key == "COGNITO_DOMAIN"
-            else str(payload[key]).strip()
-        )
+        value = _validate_cognito_domain_value(payload[key]) if key == "COGNITO_DOMAIN" else str(payload[key]).strip()
         if value:
             normalized[key] = value
     return normalized
@@ -277,11 +273,7 @@ def _normalize_for_write(values: dict[str, Any]) -> dict[str, str]:
     ]:
         if key not in values or values.get(key) is None:
             continue
-        value = (
-            _validate_cognito_domain_value(values[key])
-            if key == "COGNITO_DOMAIN"
-            else str(values[key]).strip()
-        )
+        value = _validate_cognito_domain_value(values[key]) if key == "COGNITO_DOMAIN" else str(values[key]).strip()
         if value:
             normalized[key] = value
     return normalized
