@@ -2,11 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - Python 3.10 fallback for CI
-    import tomli as tomllib
-
+import tomllib
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -31,6 +27,7 @@ def test_pyproject_uses_new_distribution_name_and_base_jose_dependency() -> None
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
     assert pyproject["project"]["name"] == "daylily-auth-cognito"
+    assert pyproject["project"]["requires-python"] == ">=3.12"
     assert "cli-core-yo==2.1.1" in pyproject["project"]["dependencies"]
     assert "python-jose[cryptography]>=3.3.0" in pyproject["project"]["dependencies"]
     assert "auth" not in pyproject["project"].get("optional-dependencies", {})

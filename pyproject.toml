@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "Shared Cognito authentication library for FastAPI + Jinja2 web apps"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 authors = [
     {name = "Daylily Informatics", email = "daylily@daylilyinformatics.com"}
 ]
@@ -19,8 +19,6 @@ classifiers = [
 
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Framework :: FastAPI",
