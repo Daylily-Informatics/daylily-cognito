@@ -7,6 +7,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import typer
 from cli_core_yo import ccyo_out
@@ -104,6 +105,20 @@ def _resolve_mfa_configuration(mfa: str) -> str:
     return mapping[normalized]
 
 
+def _require_bare_cognito_domain(value: str) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return ""
+    parsed = urlsplit(normalized)
+    if parsed.scheme or parsed.netloc:
+        raise ValueError("cognito_domain must be a bare host without scheme")
+    if "/" in normalized:
+        raise ValueError("cognito_domain must be a bare host without path")
+    if any(char.isspace() for char in normalized):
+        raise ValueError("cognito_domain must not contain whitespace")
+    return normalized
+
+
 def _resolve_google_client_details(
     *,
     google_client_id: str | None,
@@ -149,11 +164,11 @@ def _resolve_cognito_domain(pool_info: dict[str, Any], region: str) -> str:
 
     custom_domain = pool_info.get("CustomDomain")
     if isinstance(custom_domain, str):
-        return custom_domain
+        return _require_bare_cognito_domain(custom_domain)
     if isinstance(custom_domain, dict):
         custom_domain_name = custom_domain.get("DomainName")
         if custom_domain_name:
-            return str(custom_domain_name)
+            return _require_bare_cognito_domain(str(custom_domain_name))
     return ""
 
 

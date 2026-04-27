@@ -35,7 +35,7 @@ class _Response:
 
 def test_build_authorization_url_includes_expected_query_fields() -> None:
     url = build_authorization_url(
-        domain="https://auth.example.test",
+        domain="auth.example.test",
         client_id="client-123",
         redirect_uri="https://app.example.test/auth/callback",
         state="state-123",
@@ -72,7 +72,7 @@ def test_build_authorization_url_supports_custom_scope() -> None:
 
 def test_build_logout_url_uses_normalized_domain() -> None:
     url = build_logout_url(
-        domain="https://auth.example.test/",
+        domain="auth.example.test",
         client_id="client-123",
         logout_uri="https://app.example.test/logout",
     )
@@ -85,6 +85,22 @@ def test_build_logout_url_uses_normalized_domain() -> None:
     assert parsed.path == "/logout"
     assert params["client_id"] == ["client-123"]
     assert params["logout_uri"] == ["https://app.example.test/logout"]
+
+
+def test_schemeful_domains_are_rejected() -> None:
+    with pytest.raises(ValueError, match="bare host"):
+        build_authorization_url(
+            domain="https://auth.example.test",
+            client_id="client-123",
+            redirect_uri="https://app.example.test/auth/callback",
+        )
+
+    with pytest.raises(ValueError, match="bare host"):
+        build_logout_url(
+            domain="https://auth.example.test",
+            client_id="client-123",
+            logout_uri="https://app.example.test/logout",
+        )
 
 
 def test_build_logout_url_is_stable_across_calls() -> None:

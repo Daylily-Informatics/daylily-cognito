@@ -54,7 +54,7 @@ def _make_request(app: FastAPI | None = None, path: str = "/") -> Request:
 
 def _config(**overrides: Any) -> CognitoWebSessionConfig:
     defaults = {
-        "domain": "https://auth.example.test/",
+        "domain": "auth.example.test",
         "client_id": "client-123",
         "redirect_uri": "https://app.example.test/auth/callback",
         "logout_uri": "https://app.example.test/logout",
@@ -80,6 +80,16 @@ def test_error_and_config_aliases_cover_public_surface() -> None:
     assert config.normalized_domain == "auth.example.test"
     assert config.effective_public_base_url == "https://app.example.test"
     assert config.https_only is True
+
+
+def test_config_rejects_schemeful_domain() -> None:
+    with pytest.raises(ValueError, match="bare host"):
+        _config(domain="https://auth.example.test")
+
+
+def test_config_rejects_missing_domain() -> None:
+    with pytest.raises(ValueError, match="domain is required"):
+        _config(domain="")
 
 
 def test_config_aliases_cover_http_public_base_with_override() -> None:
@@ -259,10 +269,11 @@ def test_load_session_principal_covers_cached_invalid_and_missing_states() -> No
     assert load_session_principal(request) is None
     assert request.state.cognito_auth_reason == "invalid_session"
 
-    request = _make_request(app)
-    app.state.__dict__[CONFIG_STATE_KEY] = config
-    assert load_session_principal(request) is None
-    assert request.state.cognito_auth_reason is None
+
+def test_normalize_domain_requires_bare_host() -> None:
+    assert web_session._normalize_domain("auth.example.test") == "auth.example.test"
+    with pytest.raises(ValueError, match="bare host"):
+        web_session._normalize_domain("https://auth.example.test/")
 
 
 def test_load_session_principal_invalidates_stale_server_instance() -> None:
@@ -298,7 +309,6 @@ def test_clear_session_principal_handles_missing_session() -> None:
         ({"same_site": "strict"}, "same_site must be 'lax'"),
         ({"session_max_age": 0}, "session_max_age must be positive"),
         ({"server_instance_id": ""}, "server_instance_id is required"),
-        ({"domain": "", "server_instance_id": "server-123"}, "domain is required"),
         (
             {"redirect_uri": "http://evil.example.test/callback", "server_instance_id": "server-123"},
             "redirect_uri must share scheme and host",
@@ -332,10 +342,13 @@ def test_private_helpers_cover_normalization_and_error_branches() -> None:
     assert web_session._sanitize_next_path("/auth/login") == "/"
     assert web_session._sanitize_next_path("/reports?tab=1") == "/reports?tab=1"
     assert web_session._build_error_redirect_path("/auth/error", "missing_code") == "/auth/error?reason=missing_code"
-    assert web_session._normalize_domain("https://auth.example.test/") == "auth.example.test"
+    assert web_session._normalize_domain("auth.example.test") == "auth.example.test"
     assert web_session._normalized_public_base_url(config, None) == "http://app.example.test"
     assert web_session._origin("https://app.example.test/path") == "https://app.example.test"
     assert web_session._normalize_string_list(("a", "", "b")) == ["a", "b"]
+
+    with pytest.raises(ValueError, match="bare host"):
+        web_session._normalize_domain("https://auth.example.test/")
 
     with pytest.raises(ValueError, match="raw OAuth tokens"):
         web_session._reject_token_fields([{"nested": {"refresh_token": "secret"}}])

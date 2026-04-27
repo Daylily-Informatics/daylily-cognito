@@ -11,12 +11,16 @@ from typing import Any
 
 def _normalize_domain(domain: str) -> str:
     value = domain.strip()
+    if not value:
+        raise ValueError("domain is required")
     parsed = urllib.parse.urlsplit(value)
-    if parsed.scheme and parsed.netloc:
-        value = parsed.netloc
-    elif parsed.scheme and parsed.path:
-        value = parsed.path
-    return value.rstrip("/")
+    if parsed.scheme or parsed.netloc:
+        raise ValueError("domain must be a bare host without scheme")
+    if "/" in value:
+        raise ValueError("domain must be a bare host without path")
+    if any(char.isspace() for char in value):
+        raise ValueError("domain must not contain whitespace")
+    return value
 
 
 def build_authorization_url(

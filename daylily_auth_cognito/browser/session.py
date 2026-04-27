@@ -84,6 +84,9 @@ class CognitoWebSessionConfig:
     error_redirect_path: str = DEFAULT_ERROR_REDIRECT_PATH
     server_instance_id: str | None = None
 
+    def __post_init__(self) -> None:
+        _normalize_domain(self.domain)
+
     @property
     def normalized_domain(self) -> str:
         """Return the Cognito domain without a scheme prefix."""
@@ -418,11 +421,14 @@ def _sanitize_next_path(next_path: str | None) -> str:
 
 
 def _normalize_domain(domain: str) -> str:
-    value = (domain or "").strip().rstrip("/")
-    if value.startswith("https://"):
-        value = value[len("https://") :]
-    elif value.startswith("http://"):
-        value = value[len("http://") :]
+    value = (domain or "").strip()
+    parsed = urlparse(value)
+    if parsed.scheme or parsed.netloc:
+        raise ValueError("domain must be a bare host without scheme")
+    if "/" in value:
+        raise ValueError("domain must be a bare host without path")
+    if any(char.isspace() for char in value):
+        raise ValueError("domain must not contain whitespace")
     if not value:
         raise ValueError("domain is required")
     return value
