@@ -31,7 +31,7 @@ def test_pyproject_uses_new_distribution_name_and_base_jose_dependency() -> None
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
     assert pyproject["project"]["name"] == "daylily-auth-cognito"
-    assert "cli-core-yo==2.0.0" in pyproject["project"]["dependencies"]
+    assert "cli-core-yo==2.1.0" in pyproject["project"]["dependencies"]
     assert "python-jose[cryptography]>=3.3.0" in pyproject["project"]["dependencies"]
     assert "auth" not in pyproject["project"].get("optional-dependencies", {})
     assert pyproject["project"]["scripts"]["daycog"] == "daylily_auth_cognito.cli.main:main"
@@ -46,7 +46,7 @@ def test_activate_reads_cli_core_requirement_from_pyproject() -> None:
         if dependency.startswith("cli-core-yo")
     )
 
-    assert cli_core_requirement == "cli-core-yo==2.0.0"
+    assert cli_core_requirement == "cli-core-yo==2.1.0"
     assert cli_core_requirement not in activate_script
     assert 'PYTHONPATH="" python - "$_DAYCOG_ACTIVATE_DIR/pyproject.toml"' in activate_script
     assert "tomllib.loads" in activate_script
